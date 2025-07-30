@@ -6,6 +6,7 @@ module SolnSpace
 ! Defines: solnVector, sparseVector, rhsVector
 ! Uses: EMfield
 
+use ModEM_utils
 use math_constants
 use utilities
 use sg_vector
@@ -161,6 +162,17 @@ end interface
 
 contains
 
+    subroutine solnVector_string(e, str)
+
+        implicit none
+
+        type (solnVector_t), intent(in) :: e
+        character(len=256), intent(out) :: str
+
+        write(str, '(I4.4, A, A)') e % nPol, ' - ', e % pol_name 
+
+    end subroutine solnVector_string
+
 !**********************************************************************
 !           Basic solnVector methods
 !**********************************************************************
@@ -174,20 +186,44 @@ contains
        type(grid_t), intent(in), target	    :: grid
        integer, intent(in)                  :: iTx
        type (solnVector_t), intent(inout)		:: e
+       character(len=256) :: e_msg
 
        ! local variables
        integer				:: k,istat,iPol
 
+       call ModEM_log("create_solnVector - transmitter dict: $i", intArgs=(/iTx/))
+
        if (e%allocated) then
           if (associated(e%grid, target=grid) .and. (e%tx == iTx)) then
              ! do nothing
+             call ModEM_log("create_solnVector - do nothing")
              return
           else
-             call deall_solnVector(e)
+             call ModEM_log("create_solnVector - was allocated deallSolnVector")
+             !call deall_solnVector(e)
+             e%tx = iTx
+             e%grid => grid
+             do iPol=1,e%nPol
+                e%Pol_index(iPol)=iPol
+              end do
+
+             ! set up the mode names based on transmitter type;
+             ! for now, only set up for MT. Used for I/O.
+             if (trim(txDict(iTx)%tx_type) .eq. 'MT') then
+              if (e%nPol == 2) then
+                  e%Pol_name(1) = 'Ex'
+                  e%Pol_name(2) = 'Ey'
+              else
+              end if
+             end if
+
+             return
           end if
        end if
 
        e%nPol = txDict(iTx)%nPol
+
+         call ModEM_log("create_solnVector - allocating")
 	   allocate(e%Pol_index(e%nPol), STAT=istat)
        allocate(e%Pol_name(e%nPol), STAT=istat)
        
@@ -202,12 +238,12 @@ contains
             e%Pol_name(1) = 'Ex'
             e%Pol_name(2) = 'Ey'
         else
-         call errStop('problem creating MT modes in create_solnVector')
         end if
        end if
 
        allocate(e%pol(e%nPol), STAT=istat)
        do k = 1,e%nPol
+          call ModEM_log('Create SolnVector: $i of $i - ($i, $i, $i)', intArgs=(/k, e % nPol, grid % nx, grid % ny, grid % nz/))
           call create_cvector(grid,e%pol(k),EDGE)
        enddo
        e%tx = iTx
@@ -226,6 +262,8 @@ contains
 
        ! local variables
        integer				:: k, istat
+
+       call ModEM_log("deall_solnVector - start")
 
        if (associated(e%pol)) then
           deallocate(e%Pol_index, STAT=istat)
@@ -259,6 +297,7 @@ contains
          call errStop('input EM soln not allocated yet in copy_solnVector')
        endif
 
+       call ModEM_log("copy_solnVector - Calling create_solnVector")
        call create_solnVector(eIn%grid,eIn%tx,eOut)
 
        do k = 1,eIn%nPol
@@ -771,6 +810,8 @@ contains
           end if
        end if
 
+
+       call ModEM_log("create_rhsVector - allocating nPol: $i", intArgs=(/txDict(iTx) % nPol/))
        b%nPol = txDict(iTx)%nPol
        allocate(b%b(b%nPol), STAT=istat)
        allocate(b%Pol_name(b%nPol), STAT=istat)

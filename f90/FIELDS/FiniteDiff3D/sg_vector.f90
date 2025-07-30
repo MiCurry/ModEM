@@ -9,6 +9,7 @@ module sg_vector
   ! types defined on this grid, and operations defined on these data types. Not
   ! specific to EM problem, no dependency on outside (from other classes) modules.
 
+  use ModEM_utils
   use math_constants		! math/ physics constants
   use utilities             ! for error and warning messages
   use griddef
@@ -440,7 +441,6 @@ Contains
     E%nx = nx
     E%ny = ny
     E%nz = nz
-
 
     ! gridType
     E%gridType = gridType

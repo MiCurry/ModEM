@@ -727,10 +727,12 @@ Contains
           character (len=3)         :: igchar
           character (len=20)        :: version = ''
           character (len=200)       :: fn_output
+          character (len=256) :: e_msg
           logical            :: sparse
           real (kind=prec)   :: omega,period
 
           sparse = 1
+
 
           if (present(format)) then
             if (trim(format) .eq. 'full') then

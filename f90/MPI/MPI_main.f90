@@ -2,6 +2,7 @@
 module MPI_main
 #ifdef MPI
 
+  use ModEM_utils
   use math_constants
   use file_units
   use utilities
@@ -77,18 +78,23 @@ Subroutine Master_Job_fwdPred(sigma,d1,eAll)
 
      starttime = MPI_Wtime()
 
-
-
-   
+    call ModEM_log("Master_job_fwdPred - Start")
+    call ModEM_memory_log_report("fwdPred - start")
      
      ! First, distribute the current model to all workers
        call Master_job_Distribute_Model(sigma)
+
+    call ModEM_log("Master_job_fwdPred - after distribute model")
+    call ModEM_memory_log_report("fwdPred - after dist")
 
    ! Next, if we're storing the e vectors as files, 
    ! make sure the prefix is up to date
    if ( cUserDef%storeSolnsInFile ) then
       call Master_job_Distribute_prefix(cUserDef%prefix)
    end if
+
+    call ModEM_log("Master_job_fwdPred - Distributing tasks")
+    call ModEM_memory_log_report("fwdPred - before dist task")
 
         job_name= 'FORWARD'      
    if ( present(eAll ) ) then
@@ -108,6 +114,8 @@ Subroutine Master_Job_fwdPred(sigma,d1,eAll)
       call Master_job_Distribute_Taskes(job_name,nTx,sigma)
    end if
 
+   call ModEM_log("Master_job_fwdPred - After distribute tasks")
+   call ModEM_memory_log_report("fwdPred - after dist task")
 
         
 ! Compute the model Responces
@@ -135,6 +143,8 @@ endif
                 time_used = endtime-starttime
         write(ioMPI,*)'FWD: TIME REQUIERED: ',time_used ,'s'
         call deall (e0)  
+    call ModEM_log("Master_job_fwdPred - Eend")
+    call ModEM_memory_log_report("fwdPred - end")
 
 end subroutine Master_Job_fwdPred
 
@@ -969,11 +979,19 @@ previous_message=''
 write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
  do
+
+          call ModEM_log("Waiting for a message from master")
+        
           recv_loop=recv_loop+1
           write(6,'(a12,a35)') node_info,' Waiting for a message from Master'
           call create_worker_job_task_place_holder
           call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED ,0, FROM_MASTER,MPI_COMM_WORLD,STATUS, ierr)
           call Unpack_worker_job_task
+
+          call ModEM_log("Processing Job: "//trim(worker_job_task % what_to_do)// " per_index: $i pol_index: $i", &
+              intArgs=(/worker_job_task % per_index, worker_job_task % pol_index/))
+
+          call ModEM_memory_log_report("Processing Job "//worker_job_task % what_to_do)
 
           !Receive message including what to do and another info. requiered (i.e per_index_stn_index, ...,etc)
           !call MPI_RECV(worker_job_task,1,worker_job_task_mpi,0, FROM_MASTER,MPI_COMM_WORLD, STATUS, ierr)
@@ -986,39 +1004,32 @@ write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
 if (trim(worker_job_task%what_to_do) .eq. 'FORWARD') then
 
+        per_index= worker_job_task % per_index
+        pol_index= worker_job_task % pol_index
+        worker_job_task % taskid = taskid
 
+		call initSolver(per_index,sigma,grid,e0)
+		call set_e_soln(pol_index,e0)
 
-          per_index=worker_job_task%per_index
-          pol_index=worker_job_task%pol_index
-          worker_job_task%taskid=taskid
+		call fwdSolve(per_index,e0)  
+        call reset_e_soln(e0)
 
-		       call initSolver(per_index,sigma,grid,e0)
-		       call set_e_soln(pol_index,e0)
-		       
+        if( cUserDef%storeSolnsInFile ) then
+            call Efilewrite_prefix(trim(cUserDef%prefix),per_index,pol_index,e0%pol(1))
+        endif
 
-		       call fwdSolve(per_index,e0)  
-               call reset_e_soln(e0)
+ 		! Create worker job package and send it to the master
+		call create_worker_job_task_place_holder
+		call Pack_worker_job_task
+		call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,FROM_WORKER, MPI_COMM_WORLD, ierr)
+		! Create e0_temp package (one Period and one Polarization) and send it to the master
+        which_pol=1
 
-               if( cUserDef%storeSolnsInFile ) then
-                  call Efilewrite_prefix(trim(cUserDef%prefix),per_index,pol_index,e0%pol(1))
-                  endif
- 		      ! Create worker job package and send it to the master
-		            call create_worker_job_task_place_holder
-		            call Pack_worker_job_task
-		            call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,FROM_WORKER, MPI_COMM_WORLD, ierr)
-		      ! Create e0_temp package (one Period and one Polarization) and send it to the master
-              which_pol=1
-
-              if( .not. cUserDef%storeSolnsInFile ) then
+        if( .not. cUserDef%storeSolnsInFile ) then
             call create_e_param_place_holder(e0) 
             call Pack_e_para_vec(e0)
             call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,FROM_WORKER, MPI_COMM_WORLD, ierr) 
          endif
-
-
-              !deallocate(e_para_vec,worker_job_package)
-              
-
 
 elseif (trim(worker_job_task%what_to_do) .eq. 'COMPUTE_J') then
 
@@ -1129,12 +1140,14 @@ isComplex = d%d(per_index)%data(dt_index)%isComplex
 elseif (trim(worker_job_task%what_to_do) .eq. 'JmultT') then
 
 
-                       per_index=worker_job_task%per_index
-                       pol_index=worker_job_task%pol_index
-                       worker_job_task%taskid=taskid
+      per_index=worker_job_task%per_index
+      pol_index=worker_job_task%pol_index
+      worker_job_task%taskid=taskid
             
-                    call initSolver(per_index,sigma,grid,e0,e,comb)   
-                    call get_nPol_MPI(e0)
+      call ModEM_log("Jmult - Before initSolver")
+      call initSolver(per_index,sigma,grid,e0,e,comb)   
+      call get_nPol_MPI(e0)
+
       if( cUserDef%storeSolnsInFile ) then
          do ipol=1,nPol_MPI 
             call Efileread_prefix(cUserDef%prefix,per_index,ipol,e0%pol(ipol))
@@ -1227,6 +1240,7 @@ elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute nTx') then
 elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute Data') then
 
 
+            call ModEM_log("Distribute data")
             call create_data_vec_place_holder(d)
             call MPI_BCAST(data_para_vec,Nbytes, MPI_PACKED,0, MPI_COMM_WORLD,ierr)
             call UnPack_data_para_vec(d)
@@ -1238,6 +1252,7 @@ elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute Prefix') then
 elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute eAll') then
 
  
+         call ModEM_log("Distribute eall")
               do iper=1,d%nTx
                   which_per=iper
                   call create_eAll_param_place_holder(e0)
@@ -1248,6 +1263,7 @@ elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute eAll') then
 
 elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute Model') then
 
+            call ModEM_log("Distribute model")
             call create_model_param_place_holder(sigma)
             call MPI_BCAST(sigma_para_vec,Nbytes, MPI_PACKED,0, MPI_COMM_WORLD,ierr)
             call unpack_model_para_values(sigma)

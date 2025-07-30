@@ -5,6 +5,7 @@ program Mod3DMT
 !              AUTHORS  Gary Egbert, Anna Kelbert & Naser Meqbel
 !              College of Earth, Ocean and Atmospheric Sciences
 
+     use ModEM_utils
      use SensComp
      use SymmetryTest
      use Main
@@ -47,8 +48,7 @@ program Mod3DMT
 			 write(6,*)'I am a SERIAL version'
 #endif
 
-
-
+      call ModEM_utils_init()
 
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations

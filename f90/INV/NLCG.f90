@@ -2,6 +2,7 @@ module NLCG
 
 !use math_constants
 !use utilities
+use ModEM_utils
 use senscomp
 use dataio
 
@@ -509,6 +510,7 @@ endif
    character(100)       :: mFile, mHatFile, gradFile, dataFile, resFile, logFile
    type(solnVectorMTX_t)      :: eAll
 
+   call ModEM_memory_log_report("NLCG Solver - Start")
 
    if (present(fname)) then
       call read_NLCGiterControl(iterControl,fname,ok)
@@ -539,6 +541,8 @@ endif
    ! starting model contains the rough deviations from the prior
    mHat = m
 
+   call ModEM_memory_log_report("NLCG Solver - Before Func")
+
    !  compute the penalty functional and predicted data
    if( cUserDef%storeSolnsInFile ) then
       call func(lambda,d,m0,mHat,value,mNorm,dHat,RMS=rms)
@@ -549,6 +553,8 @@ endif
    call printf('START',lambda,alpha,value,mNorm,rms,logFile)
 	 nfunc = 1
    write(iterChar,'(i3.3)') 0
+
+   call ModEM_memory_log_report("NLCG Solver - After Func")
 
    ! output (smoothed) initial model and responses for later reference
    call CmSqrtMult(mHat,m_minus_m0)
@@ -562,6 +568,8 @@ endif
      call write_dataVectorMTX(dHat,trim(dataFile))
    end if
 
+   call ModEM_memory_log_report("NLCG Solver - Before Gradient")
+
    ! compute gradient of the full penalty functional
    if( cUserDef%storeSolnsInFile ) then
       call gradient(lambda,d,m0,mHat,grad,dHat)
@@ -572,6 +580,8 @@ endif
      gradFile = trim(iterControl%fname)//'_NLCG_'//iterChar//'.grt'
      call write_modelParam(grad,trim(gradFile))
    end if
+
+   call ModEM_memory_log_report("NLCG Solver - After Gradient")
 
    ! update the initial value of alpha if necessary
    gnorm = sqrt(dotProd(grad,grad))
@@ -591,6 +601,8 @@ endif
    h = g
 
    do
+      call ModEM_memory_log_report("NLCG Solver - Iteration Start")
+
       write(*,'(a30,i5,a8,d32.16)') "######## iter=",iter," RMS=",rms
       !  test for convergence ...
       if((rms.lt.iterControl%rmsTol).or.(iter.ge.iterControl%maxIter)) then
@@ -625,6 +637,9 @@ endif
             call lineSearchQuadratic(lambda,d,m0,h,alpha,mHat,value,grad,rms,nLS,dHat,eAll)
          endif
 	  	!call deall(eAll)
+
+      call ModEM_memory_log_report("NLCG Solver - After Line Searches")
+
 	  case default
         call errStop('Unknown line search requested in NLCG')
 	  end select

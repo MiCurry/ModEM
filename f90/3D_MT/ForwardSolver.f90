@@ -163,11 +163,13 @@ end subroutine ini_BC_from_file
    end if
 
    !  allocate for background solution
+   call ModEM_log("initSolver - calling create_solnVector")
    call create_solnVector(grid,iTx,e0)
 
    if(initForSens) then
       !  allocate for sensitivity solution, RHS - same for all TX types
       !  assuming here that we don't use sparse storage ... we could!
+      call ModEM_log("initSolver - calling create_solnVector - initForSens")
       call create_solnVector(grid,iTx,e)
       comb%nonzero_source = .true.
       comb%sparse_source = .false.
@@ -217,6 +219,8 @@ end subroutine ini_BC_from_file
    ! local variables
    logical			:: initForSens
    character(10)    :: txType
+
+   call ModEM_log("Calling exit solver")
 
    initForSens = present(comb)
 

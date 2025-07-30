@@ -63,7 +63,6 @@ module ModEM_utils
 
     public ModEM_utils_init
     public ModEM_utils_get_info
-    public ModEM_utils_log_write
     public ModEM_log
     public ModEM_memory_get_maxrss
     public ModEM_memory_print_report
@@ -98,7 +97,7 @@ contains
        write(log_fname, log_str_fmt) 'log.', rank, '.modem.out'
 
        open(newunit=log_fid, file=log_fname, status='replace')
-       write(log_fid, *) "File opened"
+       write(log_fid, '(A,I4.4,A,A)') "Log Initalized - ", rank, ' - ', log_fname
        call flush(log_fid)
    
    end Subroutine ModEM_utils_init
@@ -135,7 +134,7 @@ contains
 
    end function ModEM_utils_get_comm_size
 
-   subroutine ModEM_utils_log_write(msg, intArgs, realArgs, logicArgs, fid) 
+   subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid) 
 
        implicit none
 
@@ -160,7 +159,7 @@ contains
        write(log_fid,*) trim(messageExpanded)
        call flush(log_fid)
 
-   end subroutine ModEM_utils_log_write
+   end subroutine ModEM_log
 
    subroutine ModEM_memory_get_maxrss(maxrss_bytes)
 
@@ -217,20 +216,12 @@ contains
 
        character (len=*), intent(in) :: message
        integer :: maxrss
-       real :: maxrss_bytes, maxrss_kb, maxrss_mb, maxrss_gb
+
+       call ModEM_memory_get_maxrss(maxrss)
 
        call ModEM_memory_do_log(message, maxrss)
 
    end subroutine ModEM_memory_log_report
-
-   subroutine ModEM_log(message)
-
-       character (len=*), intent(in) :: message
-
-       write(log_fid, *) trim(message)
-       call flush(log_fid)
-
-   end subroutine ModEM_log
 
    subroutine ModEM_memory_do_log(message, maxrss)
 
