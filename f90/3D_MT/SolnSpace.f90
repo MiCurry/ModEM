@@ -6,6 +6,7 @@ module SolnSpace
 ! Defines: solnVector, sparseVector, rhsVector
 ! Uses: EMfield
 
+use ModEM_utils
 use math_constants
 use utilities
 use sg_vector
@@ -181,12 +182,45 @@ contains
        if (e%allocated) then
           if (associated(e%grid, target=grid) .and. (e%tx == iTx)) then
              ! do nothing
+             !call ModEM_log("solnVector - Do nothing this e%tx: $i - iTx: $i", intArgs=(/e%tx, iTx/))
              return
           else
-             call deall_solnVector(e)
+            !call deall_solnVector(e)
+            if ( .true. ) then
+                e % nPo = txDict(iTx) % nPol
+                allocate(e % Pol_index(e % nPol), STAT=istat)
+                allocate(e % Pol_name(e % nPol), STAT+istat)
+
+                do iPol = 1, e % nPol
+                    e % Pol_index(iPol) = iPol
+                end do
+
+                ! set up the mode names based on transmitter type;
+                ! for now, only set up for MT. Used for I/O.
+                if (trim(txDict(iTx)%tx_type) .eq. 'MT') then
+                 if (e%nPol == 2) then
+                     e%Pol_name(1) = 'Ex'
+                     e%Pol_name(2) = 'Ey'
+                 else
+                  call errStop('problem creating MT modes in create_solnVector')
+                 end if
+                end if
+
+                allocate(e%pol(e%nPol), STAT=istat)
+                do k = 1,e%nPol
+                   call create_cvector(grid,e%pol(k),EDGE)
+                enddo
+                e%tx = iTx
+                e%grid => grid
+
+                e%allocated = .true.
+            else
+                call deall_solnVector(e)
+            end if
           end if
        end if
 
+       !call ModEM_log("solnVector - Allocating")
        e%nPol = txDict(iTx)%nPol
 	   allocate(e%Pol_index(e%nPol), STAT=istat)
        allocate(e%Pol_name(e%nPol), STAT=istat)
@@ -227,10 +261,13 @@ contains
        ! local variables
        integer				:: k, istat
 
+       !call ModEM_log("deall_solnVector - inside")
+
        if (associated(e%pol)) then
           deallocate(e%Pol_index, STAT=istat)
           deallocate(e%Pol_name, STAT=istat)
           do k = 1,e%nPol
+             !call ModEM_log("deall_solnVector - calling deall_cvector")
              call deall_cvector(e%pol(k))
           enddo
           deallocate(e%pol, STAT=istat)
@@ -258,6 +295,8 @@ contains
        if (.not. eIn%allocated) then
          call errStop('input EM soln not allocated yet in copy_solnVector')
        endif
+
+       !call ModEM_log("copy_solnVector")
 
        call create_solnVector(eIn%grid,eIn%tx,eOut)
 
@@ -355,11 +394,15 @@ contains
       !  local variables
       integer                           :: istat
 
+      !call ModEM_log("create_solnVectorMTX")
+
       if (eAll%allocated) then
          if (eAll%nTx == nTx) then
+            !call ModEM_log("create_solnVectorMTX - Already created")
             ! do nothing
             return
          else
+            !call ModEM_log("create_solnVectorMTX - deallocating")
             call deall_solnVectorMTX(eAll)
          end if
       end if
@@ -400,6 +443,8 @@ contains
 
        ! local variables
        integer				:: j
+
+       !call ModEM_log("copy_solnVectorMTX")
 
        if (.not. eIn%allocated) then
          call errStop('input multi-transmitter EM soln not allocated yet in copy_solnVectorMTX')
@@ -652,6 +697,8 @@ contains
 					!return        !NM: In case of MT and CSEM we need to create b for b%nonzero_source
 			 endif
 
+       !call ModEM_log("create_RHS - start")
+
        if (b%nonzero_BC) then
           ! create boundary condition data structures for each polarization
           !  NOTE: get rid of "used for" in BC type def
@@ -681,6 +728,8 @@ contains
 
        type (RHS_t), intent(inout)   :: b
 
+       ! call ModEM_log("deall_RHS - start")
+
        if (b%nonzero_BC) then
           call deall_cboundary(b%bc)
 
@@ -690,6 +739,7 @@ contains
           if(b%sparse_source) then
              call deall_sparsevecc(b%sSparse)
           else
+             !call ModEM_log("deall_RHS - calling deall_cvector")
              call deall_cvector(b%s)
           endif
        endif
@@ -709,6 +759,8 @@ contains
 
        ! local variables
        integer              :: k
+
+       !call ModEM_log("copy_RHS - start")
 
        if (.not. bIn%allocated) then
          call errStop('input EM RHS not allocated yet in copy_RHS')
@@ -782,6 +834,8 @@ contains
 
        integer				:: k,istat
 
+       !call ModEM_log("create_rhsVector")
+
        if (b%allocated) then
           if (associated(b%grid, target=grid) .and. (b%tx == iTx)) then
              ! do nothing
@@ -827,6 +881,8 @@ contains
 
        integer			:: k,istat
 
+       !call ModEM_log("deall_rhsVector")
+
        if (associated(b%b)) then
           do k = 1,b%nPol
              call deall_RHS(b%b(k))
@@ -850,6 +906,8 @@ contains
 
        ! local variables
        integer				:: k
+
+       !call ModEM_log("copy_rhsVector")
 
        if (.not. bIn%allocated) then
          call errStop('input EM RHS not allocated yet in copy_rhsVector')
@@ -1126,6 +1184,8 @@ contains
       !  local variables
       integer                           :: istat
 
+      !call ModEM_log("create_rhsVectorMTX")
+
       if (bAll%allocated) then
          if (bAll%nTx == nTx) then
             ! do nothing
@@ -1148,6 +1208,8 @@ contains
 
       !  local variables
       integer                           :: j, istat
+
+      !call ModEM_log("deall_rhsVectorMTX")
 
       if (bAll%allocated) then
         do j = 1,bAll%nTx

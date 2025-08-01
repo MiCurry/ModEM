@@ -9,6 +9,7 @@ module sg_vector
   ! types defined on this grid, and operations defined on these data types. Not
   ! specific to EM problem, no dependency on outside (from other classes) modules.
 
+  use ModEM_utils
   use math_constants		! math/ physics constants
   use utilities             ! for error and warning messages
   use griddef
@@ -354,7 +355,10 @@ Contains
     character (len=80), intent(in)     :: gridType
 
 	! First deallocate anything, that's allocated
+    !call ModEM_memory_log_report("create_rvector - start")
+
 	call deall_rvector(E)
+
 
     ! Set pointer
     E%grid => igrid
@@ -407,6 +411,8 @@ Contains
         write (0, *) 'Warning: unable to allocate rvector - invalid grid supplied'
     end if
 
+    !call ModEM_memory_log_report("create_rvector - end")
+
   end subroutine create_rvector  ! create_rvector
 
 
@@ -425,6 +431,10 @@ Contains
     integer                             :: status,nx,ny,nz
 
     character (len=80), intent(in)      :: gridType
+
+    if (E%allocated) then 
+        !call ModEM_log("create_cvector - was already allocated $i $i $i", intargs=(/E % nx, E % ny, E % nz/))
+    end if
 
 	! First deallocate anything, that's allocated
     call deall_cvector(E)
@@ -524,9 +534,9 @@ Contains
 
     ! deallocate memory for x,y,z
     if (E%allocated) then 
-    deallocate(E%x, STAT=status)
-    deallocate(E%y, STAT=status)
-    deallocate(E%z, STAT=status)
+        deallocate(E%x, STAT=status)
+        deallocate(E%y, STAT=status)
+        deallocate(E%z, STAT=status)
     end if
     
 
@@ -1044,6 +1054,7 @@ Contains
 
     ! if the input was a temporary function output, deallocate
     if (E1%temporary) then
+        !!call ModEM_log("copy_cvector - calling deall_cvector")
     	call deall_cvector(E1)
     end if
 

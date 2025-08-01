@@ -5,6 +5,7 @@
 ! module interface is  specific to implementation of operators in SG3DFWC1
 module solver
 
+   use ModEM_utils
    use math_constants	! math/ physics constants
    use utilities, only: isnan
    !use griddef	! staggered grid definitions
@@ -161,6 +162,7 @@ subroutine QMR(b,x, QMRiter)
       stop
   end if
 
+  !call ModEM_memory_log_report("QMR - before create")
   ! Allocate work arrays
   Call create(x%grid, AX, x%gridType)
   Call create(x%grid, R, x%gridType)
@@ -177,6 +179,7 @@ subroutine QMR(b,x, QMRiter)
   Call create(x%grid, PT,x%gridType)
   Call create(x%grid, D,x%gridType)
   Call create(x%grid, S,x%gridType)
+  !call ModEM_memory_log_report("QMR - after create")
 
   ! NOTE: this iterative solver is QMR without look-ahead
   ! patterned after the scheme given on page 24 of Barrett et al.
@@ -192,9 +195,13 @@ subroutine QMR(b,x, QMRiter)
   ! b - Ax, for inital guess x, that has been inputted to the routine
   Call linComb(C_ONE,b,C_MinusOne,R,R)
 
+  ! call ModEM_memory_log_report("after lim comb")
+
   ! Norm of rhs, residual
   bnorm = CDSQRT(dotProd(b, b))
   rnorm = CDSQRT(dotProd(R, R))
+
+  !call ModEM_memory_log_report("after bnorm, rnorm")
 
   ! this usually means an inadequate model, in which case Maxwell's fails
   if (isnan(abs(bnorm))) then
@@ -208,12 +215,16 @@ subroutine QMR(b,x, QMRiter)
   !L 
   VT = R
   ilu_adjt = .false.
+  !call ModEM_memory_log_report("M1Solve before")
   Call M1solve(VT,ilu_adjt,Y)
+  !call ModEM_memory_log_report("M1Solve after")
   RHO = CDSQRT(dotProd(Y,Y))
   !U
   WT = R
   ilu_adjt = .true.
+  !call ModEM_memory_log_report("M2Solve before")
   Call M2solve(WT,ilu_adjt,Z)
+  !call ModEM_memory_log_report("M2Solve after")
   PSI  = CDSQRT(dotProd(Z,Z))
   GAMM = C_ONE
   ETA  = C_MinusONE
@@ -222,6 +233,9 @@ subroutine QMR(b,x, QMRiter)
   ! and the iterations are less than maxIt
   loop: do while ((QMRiter%rerr(iter).gt.QMRiter%tol).and.&
        (iter.lt.QMRiter%maxIt))
+        
+      !call ModEM_memory_log_report("QMR loop start")
+
       if ((RHO.eq.C_ZERO).or.(PSI.eq.C_ZERO)) then
         QMRiter%failed = .true.
         write(0,*) 'QMR FAILED TO CONVERGE : RHO'
@@ -319,6 +333,9 @@ subroutine QMR(b,x, QMRiter)
       ! Keeping track of errors
       ! QMR book-keeping between divergence correction calls
       QMRiter%rerr(iter) = real(rnorm/bnorm)
+
+      !call ModEM_memory_log_report("QMR loop end")
+
   end do loop
 
   QMRiter%niter = iter
@@ -339,6 +356,8 @@ subroutine QMR(b,x, QMRiter)
   Call deall(PT)
   Call deall(D)
   Call deall(S)
+
+  !call ModEM_memory_log_report("QMR - end")
 
 end subroutine qmr ! qmr
 

@@ -24,6 +24,7 @@ module sg_boundary
   !    E%xZMax(nx,ny+1)
   !    E%yZMax(nx+1,ny)
 
+  use ModEM_utils
   use math_constants
   use griddef
   use sg_vector
@@ -210,10 +211,14 @@ Contains
        deallocate(E%xYMax, E%zYMax, E%xYMin, E%zYMin, E%yXMax, &
             E%zXMax, E%yXMin, E%zXMin, E%xZMin, E%yZMin, &
             E%xZMax, E%yZMax, STAT=status)
+
+
+
     end if
 
     ! Set pointer
     E%grid => igrid
+
 
     ! Grid dimensions
     nx = igrid%nx
@@ -278,6 +283,7 @@ Contains
     implicit none
     type (cboundary)  :: E
     integer	    :: status
+
 
     ! deallocate memory for different 2D faces of boundaries
     if(E%allocated) then

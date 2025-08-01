@@ -218,10 +218,14 @@ end subroutine unpack_BC_from_file
 
    initForSens = present(comb)
 
+   call ModEM_log("initSolver - start")
+   call ModEM_memory_log_report("initSolver - start")
+
    !  allocate for background solution
    call create_solnVector(grid,iTx,e0)
 
    if(initForSens) then
+       call ModEM_log("initSolver - initForSens")
       !  allocate for sensitivity solution, RHS - same for all TX types
       !  assuming here that we don't use sparse storage ... we could!
       call create_solnVector(grid,iTx,e)

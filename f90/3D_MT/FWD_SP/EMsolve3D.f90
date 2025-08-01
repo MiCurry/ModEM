@@ -189,12 +189,14 @@ Contains
     ! *essentially it should be e(EDGEb)
     ! for now we don't have an interface to deal with cboundary
     ! so just use cvectors to deliver the value...
+    call ModEM_memory_log_report("FWDSolve3D - Before allocates")
     call create_cvector(bRHS%grid, tvec, eSol%gridtype)
     allocate(e(Ne))
     allocate(ei(Nei))
     allocate(s(Ne))
     allocate(b(Nei))
     allocate(temp(Ne))
+    call ModEM_memory_log_report("FWDSolve3D - after allocates")
     ! at this point e should be all zeros if there's no initial guess
     call getCVector(eSol,e)
     if(bRHS%nonZero_Source) then ! source (TRN)

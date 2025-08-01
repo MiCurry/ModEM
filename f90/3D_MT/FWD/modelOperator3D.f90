@@ -23,6 +23,7 @@ module modelOperator3D
   !  This version is just as efficient as the original stable version.
   !  Anna Kelbert, 14 May 2018.
 
+  use ModEM_utils
   use math_constants
   use utilities
   use gridcalc             ! staggered grid definitions
@@ -150,6 +151,8 @@ Contains
     !  INPUTS:
     type (grid_t), intent(in)		  :: inGrid
 
+    call ModEM_log("ModelDataInit - Start")
+
     !   copy inGrid to mGrid
     call copy_grid(mGrid,inGrid)
 
@@ -185,6 +188,7 @@ Contains
     call deall_rscalar(V_N)
 
     ! and the edge conductivities
+    call ModEM_log("ModelDataCleanUp - calling deall_rvector")
     call deall_rvector(sigma_E)
 
     ! and the cell conductivities
@@ -884,6 +888,7 @@ Contains
     logical, intent (in)                     :: adjt
     type (cvector), intent (inout)           :: outE
 
+    !call ModEM_memory_log_report("MultA_N - start")
 
     if (.not.inE%allocated) then
       write(0,*) 'inE in MultA_N not allocated yet'
@@ -915,6 +920,8 @@ Contains
     else
        write(0, *) 'Error-complex vectors for MultA_N are not of same size'
     end if
+
+    !call ModEM_memory_log_report("MultA_N - end")
 
   end subroutine MultA_N
 

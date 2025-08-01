@@ -6,6 +6,7 @@ module EMsolve3D
   use sg_boundary			! work between different data types
   					! (between boundary conditions and
 					! complex vectors)
+  use ModEM_utils
   use sg_diff_oper			 ! generic differential operators
   use sg_sparse_vector, only: add_scvector
   use modelOperator3d                   ! quasi-static Maxwell operator module
@@ -159,12 +160,16 @@ Contains
        stop
     endif
 
+    !call ModEM_memory_log_report("FWDSolve3D - before creates - 1")
     ! allocate/initialize local data structures
     Call create_cvector(bRHS%grid, b, eSol%gridType)
     Call create_cvector(bRHS%grid, temp, eSol%gridType)
+
     ! this is just a work array, at a given instance only single frequency and
     ! mode is being used
     Call create_cboundary(bRHS%grid, tempBC)
+    !call ModEM_memory_log_report("FWDSolve3D - after creates - 1")
+
 
     if(bRHS%nonzero_Source) then
        call create_cscalar(bRHS%grid,phi0,CORNER)
@@ -303,6 +308,7 @@ Contains
     endif
     loop: do while ((.not.converged).and.(.not.failed))
 
+      !call ModEM_memory_log_report("Before QMR/BICG")
 	   
       if (trim(solver_name) .eq. 'QMR') then
         write(*,*) 'I am using QMR with initial relative error ',KSSiter%rerr(1)
@@ -313,6 +319,8 @@ Contains
       else
         write(*,*) 'Unknown Forward Solver Method'
       end if
+
+      !call ModEM_memory_log_report("After QMR/BICG")
 	
 	   
        ! algorithm is converged when the relative error is less than tolerance

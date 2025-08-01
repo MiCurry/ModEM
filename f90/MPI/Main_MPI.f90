@@ -617,6 +617,8 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      Integer        :: per_index,pol_index,stn_index,iTx,i,iDt,j
      character(80)  :: job_name
 
+     call ModEM_memory_log_report("fwdPred - Start")
+
      ! nTX is number of transmitters;
      nTx = d1%nTx
      starttime = MPI_Wtime()
@@ -650,6 +652,8 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      job_name= 'FORWARD'
      call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll,comm_current)
 
+     call ModEM_memory_log_report("fwdPred - After Distribute tasks")
+
      ! Initialize only those grid elements on the master that are used in
      ! EMfieldInterp
      ! (obviously a quick patch, needs to be fixed in a major way)
@@ -677,6 +681,8 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      time_used = endtime-starttime
      write(ioMPI,*)'FWD: TIME REQUIERED: ',time_used ,'s'
      call deall (e0)
+
+     call ModEM_memory_log_report("fwdPred - After dataResp")
 
 end subroutine Master_job_fwdPred
 
@@ -1594,6 +1600,9 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      ! endif
      do ijob=1,total_jobs !loop through all jobs
          ! loop through all jobs, until we run out of workers
+        
+         call ModEM_memory_log_report("Distribute_tasks - top of loop")
+
          who=who+1
          ! count from head
          call find_next_job(nTx,total_jobs,tcounter,ascend,eAll_out,&
@@ -1654,6 +1663,8 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
     &         comm_current, STATUS, ierr)
          ! call get_nPol_MPI(eAll_out%solns(which_per)) 
          ! if (nPol_MPI==1)  which_pol=1
+
+         call ModEM_memory_log_report("Distribute_tasks - after mpi_recv")
 
          call Unpack_e_para_vec(eAll_out%solns(which_per))
 
@@ -1854,6 +1865,7 @@ Subroutine Worker_job(sigma,d)
      write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
      do  ! the major loop
+
          recv_loop=recv_loop+1
          ! prepare the job info structure 
          call create_worker_job_task_place_holder
@@ -1889,6 +1901,8 @@ Subroutine Worker_job(sigma,d)
     &        ' Waiting for a message from Someone'
              end if
          end if
+         
+
          ! reset the timer
          previous_time = now
          now = MPI_Wtime()
@@ -1901,6 +1915,10 @@ Subroutine Worker_job(sigma,d)
          write(6,'(a12,a12,a30,a16,i5)') node_info,' MPI TASK [',         &
     &        trim(worker_job_task%what_to_do),'] received from ',        &
     &        STATUS(MPI_SOURCE)
+
+         call ModEM_log("Worker_job - "//trim(worker_job_task % what_to_do)//" $i $i ", &
+             intArgs=(/worker_job_task % per_index, worker_job_task % pol_index/))
+
          ! for debug
          ! write(6,*) 'source = ', MPI_SOURCE
          ! write(6,*) 'tag = ', MPI_TAG
@@ -1936,7 +1954,11 @@ Subroutine Worker_job(sigma,d)
              end if
              if ((para_method.eq.0).or.(size_local.eq.1)) then
                  ! you are on your own, bro!
+                 call ModEM_memory_log_report("Forward - Before fwdSolve")
+
                  call fwdSolve(per_index,e0,b0,device_id) 
+
+                 call ModEM_memory_log_report("Forward - After fwdSolve")
              else
 #ifdef PETSC
                  call fwdSolve(per_index,e0,b0,device_id,comm_local) 

@@ -5,6 +5,7 @@ program Mod3DMT
 !              AUTHORS  Gary Egbert, Anna Kelbert & Naser Meqbel
 !              College of Earth, Ocean and Atmospheric Sciences
 
+     use ModEM_utils
      use ModEM_timers
      use SensComp
      use SymmetryTest
@@ -58,6 +59,10 @@ program Mod3DMT
       call parseArgs('Mod3DMT',cUserDef) ! OR readStartup(rFile_Startup,cUserDef)
       write(6,*)'I am a SERIAL version'
 #endif
+
+      call ModEM_utils_init()
+
+
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations
 #ifdef MPI
