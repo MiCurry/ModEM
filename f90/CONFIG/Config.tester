@@ -1,0 +1,10 @@
+#!/bin/sh
+
+perl fmkmf.pl -f90 mpifort \
+-opt '-O3 -ffree-line-length-none -fallow-argument-mismatch' \
+-mpi '-x f95-cpp-input -DMPI' \
+-o './objs/3D_MT/GFortRelease' \
+-l '-llapack -lblas' \
+-lp '/usr/lib64' \
+-p .:INV:MPI:LAPACK:SENS:UTILS:FIELDS/FiniteDiff3D:3D_MT:3D_MT/DICT:3D_MT/modelParam:3D_MT/FWD:3D_MT/FWD/Mod2d:3D_MT/ioMod \
+ModEM_Tester.f90 > Makefile.tester
