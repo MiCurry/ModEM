@@ -1,0 +1,6 @@
+
+OBJ += $(OBJDIR)/ModEM_getrusage.o
+
+$(OBJDIR)/ModEM_getrusage.o: UTILS/ModEM_getrusage.c
+	$(CC) -c UTILS/ModEM_getrusage.c -o $(OBJDIR)/ModEM_getrusage.o
+

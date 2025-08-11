@@ -57,7 +57,6 @@ module ModelSpace
      !   public, but all attributes will be private.  Only routines in this
      !   module can use the actual attributes that define the specific realization
      !   of the model parameterization
-     private
      integer			:: Nx,Ny,NzEarth
      type(rscalar)		:: cellCond
      type(grid_t),pointer    :: grid

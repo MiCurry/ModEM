@@ -33,56 +33,5 @@ program ModEM_Tester
 
     call ModEM_memory_log_report("1")
 
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("2")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call ModEM_memory_log_report("3")
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("4")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("5")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("6")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("7")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("8")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-    call CmSqrtMult(sigma0, m_minus_m0)
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("9")
-    call ModEM_log("m_minus_0 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
-
-!    call deall_modelParam(m_minus_m0)
-    call ModEM_memory_log_report("10")
-    call ModEM_log("m_minus_1 allocated? - $l", logicArgs=(/m_minus_m0 % allocated/))
 
 end program ModEM_Tester
