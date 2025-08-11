@@ -12,26 +12,55 @@ program ModEM_Tester
     implicit none
 
     type (userdef_control) :: cUserDef
-    type(modelParam_t)                           :: mHat, m_minus_m0
-
+    type(modelParam_t) :: m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10
     type(grid_t) :: my_grid
 
     call  constructor_MPI
 
     call ModEM_utils_init()
-
     call ModEM_log("We are running!")
-    call parseArgs('Mod3DMT',cUserDef)  
 
-    call ModEM_log("After parse args")
+    call create_grid(200, 200, 12, 200, my_grid)
 
-    call initGlobalData(cUserDef)
+    call ModEM_log("After grid creation")
 
-    write(0,*) "Grid: ", grid % nx, grid % ny, grid % nz
-    write(0,*) "Sigma0: ", sigma0 % Nx, sigma0 % Ny, sigma0 % NzEarth
-    write(0,*) "Sigma1: ", sigma1 % Nx, sigma1 % Ny, sigma1 % NzEarth
+    call create_modelParam(my_grid, 'LOGE', m0)
+    
+    call ModEM_log("After modelParam creation")
+    call ModEM_memory_log_report("Before copy")
 
-    call ModEM_memory_log_report("1")
+    m1 = m0
 
+    call ModEM_memory_log_report("After copy")
+
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+    call CmSqrtMult(m1, m2)
+
+    call ModEM_memory_log_report("After CmSqrtMult")
 
 end program ModEM_Tester

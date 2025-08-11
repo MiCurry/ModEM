@@ -12,7 +12,7 @@
 # ------------------Macro-Defs---------------------
 include Makefile.local
 OBJDIR = ./objs/3D_MT/GFortRelease
-F90 = ftn
+F90 = mpifort
 FFLAGS = -O3 -ffree-line-length-none -fallow-argument-mismatch
 MPIFLAGS = -x f95-cpp-input -DMPI
 MODULE = -J $(OBJDIR)
