@@ -25,7 +25,6 @@ module ModEM_utils
 !
 ! 5. Ensure you call ModEM_memory_init and (less critically) ModEM_memory_finalize.
 !
-    use mpi
     use utilities
     use iso_c_binding, only : c_long
 #ifdef MPI
@@ -69,7 +68,9 @@ module ModEM_utils
     public ModEM_memory_convert_maxrss
     public ModEM_memory_log_report
     public ModEM_memory_do_log
+#ifdef MPI
     public ModEM_memory_add_n_log_all
+#endif
 
 
 contains
@@ -82,6 +83,10 @@ contains
        character(len=*), parameter :: log_str_fmt = '(A,I4.4,A)'
        character(len=40) :: log_fname
 
+       comm_size = 1
+       rank = 0
+
+#ifdef MPI
        call MPI_comm_size(MPI_COMM_WORLD, comm_size, ierr)
        if (ierr /= MPI_SUCCESS) then
            call errStop('Unable to get comm size for MPI')
@@ -93,6 +98,8 @@ contains
            call errStop('Unable to get rank in MPI')
            !call MPI_abort(MPI_COMM_WORLD, error_code, ierr)
        end if
+#endif
+
 
        write(log_fname, log_str_fmt) 'log.', rank, '.modem.out'
 
@@ -238,6 +245,7 @@ contains
 
    end subroutine ModEM_memory_do_log
 
+#ifdef MPI
    subroutine ModEM_memory_add_n_log_all(message)
 
        use mpi 
@@ -278,6 +286,7 @@ contains
        end if
 
    end subroutine ModEM_memory_add_n_log_all
+#endif
 
    function ModEM_mpi_get_task_rank() result(rank)
 

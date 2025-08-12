@@ -25,5 +25,5 @@ void get_maxrss(long *maxrss_bytes) {
 #endif
 
     getrusage(RUSAGE_SELF, &usage);
-    *maxrss_bytes = usage.ru_maxrss / conversion;    
+    *maxrss_bytes = usage.ru_maxrss * conversion;    
 }
