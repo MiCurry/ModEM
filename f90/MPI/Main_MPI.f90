@@ -641,10 +641,7 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
 
      ! First, distribute the current model to all workers
      call Master_job_Distribute_Model(sigma)
-     ! call Master_job_Distribute_Data(d1)
      if(.not. eAll%allocated) then
-     ! call deall(eAll)
-     ! end if
          call create_solnVectorMTX(d1%nTx,eAll)
             do iTx=1,nTx
                 call create_solnVector(grid,iTx,e0)
@@ -1591,11 +1588,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      if (robin.lt.1) then
          robin = 1
      end if
-     ! for debug
-     ! if (trim(job_name).eq. 'JmultT') then
-     !     write(6,*)'robin = ', robin
-     !    write(6,*)'total jobs = ', total_jobs
-     ! endif
+
      do ijob=1,total_jobs !loop through all jobs
          ! loop through all jobs, until we run out of workers
          who=who+1
@@ -1797,7 +1790,7 @@ end subroutine Master_job_Distribute_Taskes
     end subroutine find_next_job
 
 !###################   Worker_job: High Level Subroutine   ###################
-Subroutine Worker_job(sigma,d)
+Subroutine Worker_job(sigma,d, ctrl)
      ! subroutine for *all* worker jobs -
      ! the general idea (from Naser, I believe) is:  
      ! 
@@ -1818,10 +1811,10 @@ Subroutine Worker_job(sigma,d)
 
      type(modelParam_t),intent(inout)       :: sigma
      type(dataVectorMTX_t) ,intent(inout)   :: d
+     type(userdef_control), intent(in)      :: ctrl
    
      ! Local 
      type(modelParam_t)                     :: delSigma
-     type(userdef_control)                  :: ctrl
      Integer                                :: nTx,m_dimension,ndata
      Integer                                :: itx, ndt, dt, dt_index
    

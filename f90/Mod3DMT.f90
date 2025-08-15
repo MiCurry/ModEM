@@ -61,6 +61,7 @@ program Mod3DMT
 #endif
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations
+
 #ifdef MPI
       call setGrid_MPI(grid)
     ! Check if a large grid file with E field is defined:
@@ -152,7 +153,7 @@ program Mod3DMT
       ! for debug
       ! write(6,*)'Reporting from Node #', taskid
       if (taskid.gt.0) then
-          call Worker_job(sigma0,allData)
+          call Worker_job(sigma0, allData, cUserDef)
           if (trim(worker_job_task%what_to_do) .eq. 'Job Completed')  then
               call deallGlobalData()
               call cleanUp_MPI()
