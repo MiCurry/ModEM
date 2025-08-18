@@ -642,18 +642,18 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
 
      ! First, distribute the current model to all workers
      call Master_job_Distribute_Model(sigma)
-     ! call Master_job_Distribute_Data(d1)
+
+     job_name= 'FORWARD'
+
      if(.not. eAll%allocated) then
-     ! call deall(eAll)
-     ! end if
          call create_solnVectorMTX(d1%nTx,eAll)
             do iTx=1,nTx
                 call create_solnVector(grid,iTx,e0)
                 call copy_solnVector(eAll%solns(iTx),e0)
             end do
      end if
-     job_name= 'FORWARD'
-     call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll,comm_current)
+     call Master_job_Distribute_Taskes(job_name, nTx, sigma, eAll, comm_current)
+
 
      ! Initialize only those grid elements on the master that are used in
      ! EMfieldInterp
@@ -1654,13 +1654,12 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          which_per=worker_job_task%per_index
          which_pol=worker_job_task%pol_index
                   
-         call create_e_param_place_holder(eAll_out%solns(which_per))
-         call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, who,FROM_WORKER,  &
-    &         comm_current, STATUS, ierr)
-         ! call get_nPol_MPI(eAll_out%solns(which_per)) 
-         ! if (nPol_MPI==1)  which_pol=1
-
-         call Unpack_e_para_vec(eAll_out%solns(which_per))
+         if (.not. UserCtrl_ctrl % storeSolnsInFile) then
+             call create_e_param_place_holder(eAll_out%solns(which_per))
+             call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, who,FROM_WORKER,  &
+        &         comm_current, STATUS, ierr)
+             call Unpack_e_para_vec(eAll_out%solns(which_per))
+         end if
 
          write(ioMPI,'(a10,a16,i5,a8,i5,a11,i5)')trim(job_name) ,        &
     &   ': Receive Per # ',which_per ,' and Pol # ', which_pol ,' from ',&
