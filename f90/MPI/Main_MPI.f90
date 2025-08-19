@@ -622,7 +622,6 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      Integer        :: per_index,pol_index,stn_index,iTx,i,iDt,j
      character(80)  :: job_name
 
-     write(0,*) "Inside of Master_job_FwdPred"
 
      ! nTX is number of transmitters;
      nTx = d1%nTx
@@ -658,7 +657,7 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
                 end do
          end if
 
-         call Master_job_Distribute_Taskes(job_name, nTx, sigma, eall_in=eAll, comm=comm_current)
+         call Master_job_Distribute_Taskes(job_name, nTx, sigma, eAll, comm=comm_current)
      end if
 
      ! Initialize only those grid elements on the master that are used in
@@ -684,6 +683,7 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
              end do
          end do
      end if
+
      ! clean up the grid elements stored in GridCalc on the master node
      call deall_rvector(l_E)
      call deall_rvector(S_F)
@@ -716,7 +716,6 @@ subroutine Master_job_Distribute_DataResp(nTx, sigma, d)
     iTx_max = 0
 
     do dest = 1, number_of_workers
-
         iTx_min = iTx_max + 1
         iTx_max = iTx_min + nTasks - 1
 
@@ -749,9 +748,9 @@ subroutine Master_job_Distribute_DataResp(nTx, sigma, d)
         end if
 
         if (iTx_max >= iTx_min) then
-            call Pack_data_para_vec(d)
+            call create_data_vec_place_holder(d, start_iTx=iTx_min, end_iTx=iTx_max)
             call MPI_Recv(data_para_vec, Nbytes, MPI_PACKED, dest, FROM_WORKER, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
-            call UnPack_data_para_vec(d, start_iTx=iTx_min, end_iTx=iTx_min)
+            call UnPack_data_para_vec(d, start_iTx=iTx_min, end_iTx=iTx_max)
         end if
     end do
 
@@ -1125,9 +1124,8 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
      call deall (eAll_temp) 
      ! call deall (e0)   
      call deall_dataVectorMTX(d_temp)
-   
-end Subroutine Master_job_JmultT
 
+end Subroutine Master_job_JmultT
 
 !########################    Master_job_Jmult ##############################
 Subroutine Master_job_Jmult(mHat,m,d,eAll,comm)
@@ -1636,10 +1634,16 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      else
          comm_current = comm_world
      end if
-     call get_nPol_MPI(eAll_out%solns(1)) 
+
+     if (.not. UserCtrl_ctrl % storeSolnsInFile) then
+         call get_nPol_MPI(eAll_out%solns(1))
+     else
+         nPol_MPI = get_nPol(1)
+     end if
+
      if (rank_local.eq.-1) then ! first run!
-     ! run initial regroup -- note this requires the comm to be
-     ! comm_world as it is the only comm that works in this stage
+         ! run initial regroup -- note this requires the comm to be
+         ! comm_world as it is the only comm that works in this stage
          call Master_job_Regroup(nTx,nPol_MPI,comm)
          if (para_method.gt.0) then
              comm_current = comm_leader
@@ -1649,9 +1653,17 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      endif
      call MPI_COMM_SIZE( comm_current, size_current, ierr )
      who = 0
+
      worker_job_task%what_to_do=trim(job_name) 
-     call count_number_of_messages_to_RECV(eAll_out)
+
+     if (UserCtrl_ctrl % storeSolnsInFile) then
+        answers_to_receive = nTx * nPol_MPI
+     else
+        call count_number_of_messages_to_RECV(eAll_out)
+     end if
+
      total_jobs = answers_to_receive
+
      ! counter to locate the task 
      bcounter = 1
      tcounter = 1
@@ -1675,13 +1687,17 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          ! count from head
          call find_next_job(nTx,total_jobs,tcounter,ascend,eAll_out,&
     &        per_index, pol_index)
+
          tcounter = tcounter + robin
+
          if (tcounter.gt.total_jobs) then 
              bcounter = bcounter + 1
              tcounter = bcounter
          end if
+
          worker_job_task%per_index = per_index
          worker_job_task%pol_index = pol_index
+
          call create_worker_job_task_place_holder
          call Pack_worker_job_task
          call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED, who, &
@@ -1836,11 +1852,17 @@ end subroutine Master_job_Distribute_Taskes
      ! normally there should be nTx*nPol jobs
      ! but it is possible (in principle) that we don't have 2 pols at one per
      ! note this is not thread-safe - should only be called by the master 
+
      jobs = 0
      if (fromhead) then
          ! count from start
-         head: do iper=1,nTx !loop through all transmitters 
-             call get_nPol_MPI(eAll_out%solns(iper)) 
+         head: do iper=1,nTx !loop through all transmitters
+             if (.not. UserCtrl_ctrl % storeSolnsInFile) then
+                 call get_nPol_MPI(eAll_out%solns(iper))
+             else
+                 nPol_MPI = get_nPol(iper)
+             end if
+
              do ipol=1,nPol_MPI ! loop through all pols
                  ! count the total tasks
                  jobs=jobs+1
@@ -1854,7 +1876,12 @@ end subroutine Master_job_Distribute_Taskes
      else
          ! count from back
          tail: do iper=nTx,1,-1 !loop through all transmitters 
-             call get_nPol_MPI(eAll_out%solns(iper)) 
+             if (.not. UserCtrl_ctrl % storeSolnsInFile) then
+                 call get_nPol_MPI(eAll_out%solns(iper))
+             else
+                 nPol_MPI = get_nPol(iper)
+             end if
+
              do ipol=nPol_MPI,1,-1 ! loop through all pols
                  ! count the total tasks
                  jobs=jobs+1
@@ -1931,8 +1958,6 @@ Subroutine Worker_job(sigma,d)
      write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
      do  ! the major loop
-
-         write(0,*) "THE START OF THE WORKER JOB LOOP"
 
          recv_loop=recv_loop+1
          ! prepare the job info structure 
@@ -2046,7 +2071,6 @@ Subroutine Worker_job(sigma,d)
 
                  ! Create e0_temp package (one Period and one Polarization) 
                  ! and send it to the master
-                 write(0,*) "User Ctrl: ", UserCtrl_ctrl % storeSolnsInFile, UserCtrl_ctrl % prefix
                  if (UserCtrl_ctrl % storeSolnsInFile) then
                      call write_solnVector(e0, UserCtrl_ctrl % prefix)
                  else
@@ -2403,16 +2427,18 @@ Subroutine Worker_job(sigma,d)
              time_passed = now - previous_time
              previous_time = now
          elseif (trim(worker_job_task%what_to_do) .eq. 'DATARESP') then
+
              start_iTx = worker_job_task % per_index
              end_iTx = worker_job_task % pol_index
 
              worker_job_task % taskid = taskid 
 
              call create_solnVector(grid, 1, e0)
+
              do per_index = start_iTx, end_iTx
                 e0 % tx = per_index
 
-                do pol_index = 1, nPol_MPI
+                do pol_index = 1, get_nPol(per_index)
                     call read_solnVector(e0, UserCtrl_ctrl % prefix, pol_index=pol_index)
                 end do
 
@@ -2761,8 +2787,6 @@ subroutine create_data_vec_place_holder(d, start_iTx, end_itx)
      integer :: start_iTx_lcl
      integer :: end_iTx_lcl
 
-     write(0,*) "Inside create_data_vec_place_holder"
-     
      ! .neqv. here is the exclusive Or
      if (present(start_iTx) .neqv. present(end_iTx)) then
          write(0,*) "ERROR: In create_data_vec_place_holder - Either 'start_iTx' or 'end_iTx' was specified, but not the other"
@@ -2803,14 +2827,30 @@ subroutine create_data_vec_place_holder(d, start_iTx, end_itx)
          
 end subroutine create_data_vec_place_holder
 !****************************************************************************** 
- subroutine Pack_data_para_vec(d)
+subroutine Pack_data_para_vec(d, start_iTx, end_iTx)
      implicit none
 
      type(dataVectorMTX_t), intent(in) :: d
+     integer, optional, intent(in) :: start_iTx
+     integer, optional, intent(in) :: end_iTx
+     integer :: start_iTx_lcl, end_iTx_lcl
      integer index
      integer ndata,iper,ndt
+
+     if (present(start_iTx)) then
+        start_iTx_lcl = start_iTx
+     else
+         start_iTx_lcl = 1
+     end if
+
+     if (present(end_iTx)) then
+         end_iTx_lcl = end_iTx
+     else
+         end_iTx_lcl = d % nTx
+     end if
+
      index=1
-     do iper=1,d%nTx
+     do iper=start_iTx_lcl, end_iTx_lcl
          do ndt=1,d%d(iper)%ndt
              ndata=size(d%d(iper)%data(ndt)%value)            
              call MPI_Pack(d%d(iper)%data(ndt)%value(1,1),ndata,          &
@@ -2837,8 +2877,6 @@ subroutine UnPack_data_para_vec(d, start_iTx, end_iTx)
      integer :: start_iTx_lcl, end_iTx_lcl
      integer :: index
      integer :: ndata,iper,ndt
-
-     write(0,*) "Inside unpack_data_para_vec"
 
      ! .neqv. here is the exclusive Or
      if (present(start_iTx) .neqv. present(end_iTx)) then
