@@ -622,6 +622,8 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      Integer        :: per_index,pol_index,stn_index,iTx,i,iDt,j
      character(80)  :: job_name
 
+     write(0,*) "Inside of Master_job_FwdPred"
+
      ! nTX is number of transmitters;
      nTx = d1%nTx
      starttime = MPI_Wtime()
@@ -643,17 +645,21 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      ! First, distribute the current model to all workers
      call Master_job_Distribute_Model(sigma)
 
-     job_name= 'FORWARD'
+     job_name = 'FORWARD'
 
-     if(.not. eAll%allocated) then
-         call create_solnVectorMTX(d1%nTx,eAll)
-            do iTx=1,nTx
-                call create_solnVector(grid,iTx,e0)
-                call copy_solnVector(eAll%solns(iTx),e0)
-            end do
+     if (UserCtrl_ctrl % storeSolnsInFile ) then
+         call Master_job_Distribute_Taskes(job_name, nTx, sigma, comm=comm_current)
+     else
+         if(.not. eAll%allocated) then
+             call create_solnVectorMTX(d1%nTx,eAll)
+                do iTx=1,nTx
+                    call create_solnVector(grid,iTx,e0)
+                    call copy_solnVector(eAll%solns(iTx),e0)
+                end do
+         end if
+
+         call Master_job_Distribute_Taskes(job_name, nTx, sigma, eall_in=eAll, comm=comm_current)
      end if
-     call Master_job_Distribute_Taskes(job_name, nTx, sigma, eAll, comm_current)
-
 
      ! Initialize only those grid elements on the master that are used in
      ! EMfieldInterp
@@ -664,16 +670,20 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      Call FaceArea(grid, S_F)
 
      ! Compute the model Responces
-     do iTx=1,nTx
-         do i = 1,d1%d(iTx)%nDt
-             d1%d(iTx)%data(i)%errorBar = .false.
-             iDt = d1%d(iTx)%data(i)%dataType
-             do j = 1,d1%d(iTx)%data(i)%nSite
-                 call dataResp(eAll%solns(iTx),sigma,iDt,d1%d(iTx)%data(i)%rx(j),d1%d(iTx)%data(i)%value(:,j), &
-                           d1%d(iTx)%data(i)%orient(j))
+     if ( UserCtrl_ctrl % storeSolnsInFile) then
+         call Master_job_Distribute_dataresp(nTx, sigma, d1)
+     else
+         do iTx=1,nTx
+             do i = 1,d1%d(iTx)%nDt
+                 d1%d(iTx)%data(i)%errorBar = .false.
+                 iDt = d1%d(iTx)%data(i)%dataType
+                 do j = 1,d1%d(iTx)%data(i)%nSite
+                     call dataResp(eAll%solns(iTx),sigma,iDt,d1%d(iTx)%data(i)%rx(j),d1%d(iTx)%data(i)%value(:,j), &
+                               d1%d(iTx)%data(i)%orient(j))
+                 end do
              end do
          end do
-     end do
+     end if
      ! clean up the grid elements stored in GridCalc on the master node
      call deall_rvector(l_E)
      call deall_rvector(S_F)
@@ -684,6 +694,68 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm)
      call deall (e0)
 
 end subroutine Master_job_fwdPred
+
+subroutine Master_job_Distribute_DataResp(nTx, sigma, d)
+
+    implicit none
+
+    integer, intent(in) :: nTx
+    type (modelParam_t), intent(in) ::sigma
+    type (dataVectorMTX_t), intent(inout) :: d
+
+    character(len=*), parameter :: JOB_NAME = "DATARESP"
+
+    integer :: dest, nTasks, remainder, iTx
+    integer :: iTx_min, iTx_max, i, j, k
+
+    call create_worker_job_task_place_holder
+
+    nTasks = nTx / number_of_workers
+    remainder = modulo(nTx, number_of_Workers)
+    
+    iTx_max = 0
+
+    do dest = 1, number_of_workers
+
+        iTx_min = iTx_max + 1
+        iTx_max = iTx_min + nTasks - 1
+
+        if (remainder > 0) then 
+            iTx_max = iTx_max + 1
+            remainder = remainder - 1
+        end if
+
+        if ( iTx_max >= iTx_min ) then
+            worker_job_task % what_to_do = trim(job_name)
+            worker_job_task % per_index = iTx_min
+            worker_job_task % pol_index = iTx_max
+
+            call Pack_worker_job_task
+            call MPI_Send(worker_job_package, Nbytes, MPI_PACKED, dest, FROM_MASTER, MPI_COMM_WORLD, ierr)
+            write(ioMPI, '(a10,a16,i5,a8,i5,a11,i5)') trim(job_name), ': Send Per from ', iTx_min, ' to', iTx_max, ' to ', dest
+        end if
+    end do
+
+    remainder = modulo(nTx, number_of_workers)
+    iTx_max = 0
+
+    do dest = 1, number_of_workers
+        iTx_min = iTx_max + 1
+        iTx_max = iTx_min + nTasks - 1
+
+        if (remainder > 0) then
+            iTx_max = iTx_max + 1
+            remainder = remainder - 1
+        end if
+
+        if (iTx_max >= iTx_min) then
+            call Pack_data_para_vec(d)
+            call MPI_Recv(data_para_vec, Nbytes, MPI_PACKED, dest, FROM_WORKER, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+            call UnPack_data_para_vec(d, start_iTx=iTx_min, end_iTx=iTx_min)
+        end if
+    end do
+
+end subroutine Master_job_Distribute_DataResp
 
 
 !#########################   Master_job_Compute_J ##########################
@@ -1823,9 +1895,10 @@ Subroutine Worker_job(sigma,d)
      type(modelParam_t)                     :: delSigma
      type(userdef_control)                  :: ctrl
      Integer                                :: nTx,m_dimension,ndata
-     Integer                                :: itx, ndt, dt, dt_index
+     Integer                                :: itx, ndt, iDt, dt, dt_index
    
-     Integer                                :: iper,ipol,i,des_index
+     Integer                                :: iper,ipol,i, j, des_index
+     Integer                                :: start_iTx, end_iTx
      Integer                                :: per_index,per_index_pre 
      Integer                                :: pol_index, stn_index
      Integer                                :: eAll_vec_size
@@ -1858,6 +1931,9 @@ Subroutine Worker_job(sigma,d)
      write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
      do  ! the major loop
+
+         write(0,*) "THE START OF THE WORKER JOB LOOP"
+
          recv_loop=recv_loop+1
          ! prepare the job info structure 
          call create_worker_job_task_place_holder
@@ -2326,6 +2402,34 @@ Subroutine Worker_job(sigma,d)
              now = MPI_Wtime()
              time_passed = now - previous_time
              previous_time = now
+         elseif (trim(worker_job_task%what_to_do) .eq. 'DATARESP') then
+             start_iTx = worker_job_task % per_index
+             end_iTx = worker_job_task % pol_index
+
+             worker_job_task % taskid = taskid 
+
+             call create_solnVector(grid, 1, e0)
+             do per_index = start_iTx, end_iTx
+                e0 % tx = per_index
+
+                do pol_index = 1, nPol_MPI
+                    call read_solnVector(e0, UserCtrl_ctrl % prefix, pol_index=pol_index)
+                end do
+
+                do i = 1, d % d(per_index) % nDt
+                    d % d(per_index) % data(i) % errorBar = .false.
+
+                    iDt = d % d(per_index) % data(i) % dataType
+
+                    do j = 1, d % d(per_index) % data(i) % nSite
+                        call dataResp(e0, sigma, iDt, d % d(per_index) % data(i) % rx(j), d % d(per_index) % data(i) % value(:,j))
+                    end do
+                end do
+             end do
+
+             call create_data_vec_place_holder(d, start_iTx=start_iTx, end_iTx=end_iTx)
+             call Pack_data_para_vec(d)
+             call MPI_Send(data_para_vec, NBytes, MPI_PACKED, 0, FROM_WORKER, MPI_COMM_WORLD, ierr)
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute nTx')&
     &            then
@@ -2647,14 +2751,41 @@ End Subroutine Worker_job
 
 !******************************************************************************
 
-subroutine create_data_vec_place_holder(d)
+subroutine create_data_vec_place_holder(d, start_iTx, end_itx)
 
      implicit none
      integer Nbytes1,Nbytes2,ndata,iper,ndt,sum1,sum2
      type(dataVectorMTX_t), intent(in)           :: d
+     integer, optional, intent(in) :: start_iTx
+     integer, optional, intent(in) :: end_iTx 
+     integer :: start_iTx_lcl
+     integer :: end_iTx_lcl
+
+     write(0,*) "Inside create_data_vec_place_holder"
+     
+     ! .neqv. here is the exclusive Or
+     if (present(start_iTx) .neqv. present(end_iTx)) then
+         write(0,*) "ERROR: In create_data_vec_place_holder - Either 'start_iTx' or 'end_iTx' was specified, but not the other"
+         write(0,*) "ERROR: Please either: Specify BOTH, or, specify NONE" 
+         call ModEM_Abort()
+     end if
+
+     if (present(start_iTx)) then
+        start_iTx_lcl = start_iTx
+     else
+         start_iTx_lcl = 1
+     end if
+
+     if (present(end_iTx)) then
+         end_iTx_lcl = end_iTx
+     else
+         end_iTx_lcl = d % nTx
+     end if
+
      sum1=0
      sum2=0
-     do iper=1,d%nTx
+
+     do iper = start_iTx_lcl, end_iTX_lcl
          do ndt=1,d%d(iper)%ndt
              ndata=size(d%d(iper)%data(ndt)%value)
              CALL MPI_PACK_SIZE(ndata, MPI_DOUBLE_PRECISION,             &
@@ -2697,15 +2828,39 @@ end subroutine create_data_vec_place_holder
 
 end subroutine Pack_data_para_vec
 !****************************************************************************** 
-subroutine UnPack_data_para_vec(d)
+subroutine UnPack_data_para_vec(d, start_iTx, end_iTx)
      implicit none
      type(dataVectorMTX_t), intent(inout)  :: d
+     integer, optional, intent(in) :: start_iTx
+     integer, optional, intent(in) :: end_iTx
      ! Local
-     integer index
-     integer ndata,iper,ndt
+     integer :: start_iTx_lcl, end_iTx_lcl
+     integer :: index
+     integer :: ndata,iper,ndt
+
+     write(0,*) "Inside unpack_data_para_vec"
+
+     ! .neqv. here is the exclusive Or
+     if (present(start_iTx) .neqv. present(end_iTx)) then
+         write(0,*) "ERROR: In UnPack_Data_para_vec - Either 'start_iTx' or 'end_iTx' was specified, but not the other"
+         write(0,*) "ERROR: Please either: Specify BOTH, or, specify NONE" 
+         call ModEM_Abort()
+     end if
+
+     if (present(start_iTx)) then
+        start_iTx_lcl = start_iTx
+     else
+         start_iTx_lcl = 1
+     end if
+
+     if (present(end_iTx)) then
+         end_iTx_lcl = end_iTx
+     else
+         end_iTx_lcl = d % nTx
+     end if
 
      index=1
-     do iper=1,d%nTx
+     do iper=start_iTx_lcl, end_iTx_lcl
          do ndt=1,d%d(iper)%ndt
              ndata=size(d%d(iper)%data(ndt)%value)            
              call MPI_Unpack(data_para_vec, Nbytes, index,                &
