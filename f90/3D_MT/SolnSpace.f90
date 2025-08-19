@@ -163,7 +163,6 @@ contains
 !**********************************************************************
 !           Basic solnVector methods
 !**********************************************************************
-
      subroutine create_solnVector(grid,iTx,e)
 
      !  generic routine for creating the solnVector type for 3D problems:
@@ -386,7 +385,7 @@ contains
          fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))))
          open(newunit=fid, file=trim(fname), action='write', form=form, status='replace')
 
-         call write_cvector(fid, e % pol(e % pol_index(pol_index_lcl)), ftype_lcl)
+         call write_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
 
      end subroutine write_solnVector
 
@@ -412,9 +411,9 @@ contains
          end if
 
          if (present(pol_index)) then
-             pol_index_lcl = 1
-         else
              pol_index_lcl = pol_index
+         else
+             pol_index_lcl = 1
          end if
 
          if (present(ftype)) then
@@ -432,7 +431,7 @@ contains
              form = 'unformatted'
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
 
          if (.not. does_esoln_file_exist(e, prefix)) then
              write(0,*) "ERROR: The file for this solnVector_t (argument e) does not exist"
@@ -441,8 +440,7 @@ contains
          end if
 
          open(newunit=fid, file=trim(fname), action='read', form=form, status='old')
-
-         call read_cvector(fid, e % pol(e % pol_index(pol_index_lcl)), ftype_lcl)
+         call read_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
 
      end subroutine read_solnVector
 
@@ -456,12 +454,13 @@ contains
          integer, optional, intent(in) :: pol_index
          character(len=512) :: fname
          logical :: file_exists
+
          integer :: pol_index_lcl
 
          if (present(pol_index)) then
-             pol_index_lcl = 1
-         else
              pol_index_lcl = pol_index
+         else
+             pol_index_lcl = 1
          end if
 
          if (.not. e % allocated) then
@@ -470,7 +469,7 @@ contains
              call ModEM_abort()
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index))))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
          inquire(file=trim(fname), exist=file_exists)
 
      end function does_esoln_file_exist
