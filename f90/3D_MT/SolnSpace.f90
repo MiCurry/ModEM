@@ -163,7 +163,6 @@ contains
 !**********************************************************************
 !           Basic solnVector methods
 !**********************************************************************
-
      subroutine create_solnVector(grid,iTx,e)
 
      !  generic routine for creating the solnVector type for 3D problems:
@@ -343,21 +342,29 @@ contains
      end function dotProd_solnVector
 
      !**********************************************************************
-     subroutine write_solnVector(e, prefix, ftype)
+     subroutine write_solnVector(e, prefix, pol_index, ftype)
 
          implicit none
 
          type (solnVector_t), intent(in) :: e
          character(len=*), intent(in) :: prefix
+         integer, optional, intent(in) :: pol_index
          character(len=*), optional, intent(in) :: ftype
 
          character(len=512) :: fname, ftype_lcl, form
          integer :: fid
+         integer :: pol_index_lcl
 
          if (.not. e % allocated) then
              write(0,*) "ERROR: solnVector_t (argument e) msut be allocated before calling write_solnVector"
              write(0,*) "ERROR: Allocate it by calling `create_solnVector` first"
              call ModEM_abort()
+         end if
+
+         if (present(pol_index)) then
+             pol_index_lcl = pol_index
+         else
+             pol_index_lcl = 1
          end if
 
          if (present(ftype)) then
@@ -375,24 +382,26 @@ contains
              form = 'unformatted'
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(1))))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))))
          open(newunit=fid, file=trim(fname), action='write', form=form, status='replace')
 
-         call write_cvector(fid, e % pol(e % pol_index(1)), ftype_lcl)
+         call write_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
 
      end subroutine write_solnVector
 
      !**********************************************************************
-     subroutine read_solnVector(e, prefix, ftype)
+     subroutine read_solnVector(e, prefix, pol_index, ftype)
 
          implicit none
 
          type (solnVector_t), intent(inout) :: e
          character(len=*), intent(in) :: prefix
+         integer, optional, intent(in) :: pol_index
          character(len=*), optional, intent(in) :: ftype
 
          character(len=512) :: fname, ftype_lcl, form
          integer :: fid
+         integer :: pol_index_lcl
          logical :: file_exists
 
          if (.not. e % allocated) then
@@ -401,6 +410,12 @@ contains
              call ModEM_abort()
          end if
 
+         if (present(pol_index)) then
+             pol_index_lcl = pol_index
+         else
+             pol_index_lcl = 1
+         end if
+
          if (present(ftype)) then
             ftype_lcl = ftype
          else
@@ -416,7 +431,7 @@ contains
              form = 'unformatted'
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(1))))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
 
          if (.not. does_esoln_file_exist(e, prefix)) then
              write(0,*) "ERROR: The file for this solnVector_t (argument e) does not exist"
@@ -425,20 +440,28 @@ contains
          end if
 
          open(newunit=fid, file=trim(fname), action='read', form=form, status='old')
-
-         call read_cvector(fid, e % pol(e % pol_index(1)), ftype_lcl)
+         call read_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
 
      end subroutine read_solnVector
 
      !**********************************************************************
-     function does_esoln_file_exist(e, prefix) result(file_exists)
+     function does_esoln_file_exist(e, prefix, pol_index) result(file_exists)
 
          implicit none
 
          type (solnVector_t), intent(in) :: e
          character(len=*), intent(in) :: prefix
+         integer, optional, intent(in) :: pol_index
          character(len=512) :: fname
          logical :: file_exists
+
+         integer :: pol_index_lcl
+
+         if (present(pol_index)) then
+             pol_index_lcl = pol_index
+         else
+             pol_index_lcl = 1
+         end if
 
          if (.not. e % allocated) then
              write(0,*) "ERROR: solnVector_t (argument e) msut be allocated before calling does_esoln_file_eixst"
@@ -446,7 +469,7 @@ contains
              call ModEM_abort()
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(1))))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
          inquire(file=trim(fname), exist=file_exists)
 
      end function does_esoln_file_exist
