@@ -111,7 +111,7 @@ contains
         integer, intent(in) :: iTx
         integer, intent(in), optional :: nPol
 
-        call create_solnVector(EsMgr_grid, iTx, e, place_holder=EsMgr_save_in_file)
+        call create_solnVector(EsMgr_grid, iTx, e)
 
     end subroutine EsMgr_create_e
 
@@ -128,19 +128,19 @@ contains
         call create_solnVectorMTX(nTx, eAll)
 
         do iTx = 1, nTx
-            call create_solnVector(EsMgr_grid, iTx, e, place_holder=EsMgr_save_in_file)
+            call create_solnVector(EsMgr_grid, iTx, e)
             call copy_solnVector(eAll % solns(iTx), e)
         end do
 
     end subroutine EsMgr_create_eAll
 
-    subroutine EsMgr_get(e, iTx, nPol, from)
+    subroutine EsMgr_get(e, iTx, pol_index, from)
 
         implicit none
 
         type (solnVector_t), intent(inout) :: e
         integer, intent(in) :: iTx
-        integer, intent(in), optional :: nPol
+        integer, intent(in), optional :: pol_index
         integer, intent(in), optional :: from
 
         ! If we are reading and writing files, do nothing
@@ -149,25 +149,13 @@ contains
         end if
 
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world /= 0) then
-            call read_esoln_from_file(e, iTx, nPol)
+            call read_esoln_from_file(e, iTx, pol_index)
             return
         end if
 
         call EsMgr_recv_e(e, from)
 
     end subroutine EsMgr_get
-
-    subroutine read_esoln_from_file(e, iTx, nPol)
-
-        implicit none
-
-        type (solnVector_t), intent(inout) :: e
-        integer, intent(in) :: iTx
-        integer, intent(in), optional :: nPol
-
-        call read_solnVector(e, EsMgr_prefix, EsMgr_ftype)
-
-    end subroutine read_esoln_from_file
 
     subroutine EsMgr_save(e, to, from, prefix)
 
@@ -191,6 +179,52 @@ contains
         call EsMgr_send_e(e, to)
 
     end subroutine EsMgr_save
+
+    subroutine write_soln_to_file(e, prefix, iPol)
+
+        implicit none
+
+        type (solnVector_t), intent(in) :: e
+        character(len=*), intent(in), optional :: prefix
+        integer, intent(in), optional :: iPol
+
+        integer :: iPol_lcl
+        character(len=256) :: prefix_lcl
+
+        if (present(iPol)) then
+            iPol_lcl = iPol
+        else
+            iPol_lcl = 1
+        end if
+
+        if (present(prefix)) then
+            prefix_lcl = prefix 
+        else
+            prefix_lcl = ""
+        end if
+
+        call write_solnVector(e, EsMgr_prefix//trim(prefix_lcl), ftype=EsMgr_ftype, pol_index=iPol_lcl)
+
+    end subroutine write_soln_to_file
+
+    subroutine read_esoln_from_file(e, iTx, iPol)
+
+        implicit none
+
+        type (solnVector_t), intent(inout) :: e
+        integer, intent(in) :: iTx
+        integer, intent(in), optional :: iPol
+        integer :: iPol_lcl
+
+        if (present(iPol)) then
+            iPol_lcl = iPol
+        else
+            iPol_lcl = 1
+        end if
+
+        call read_solnVector(e, EsMgr_prefix, ftype=EsMgr_ftype, pol_index=iPol_lcl)
+
+    end subroutine read_esoln_from_file
 
     subroutine EsMgr_send_e(e, to)
 
@@ -234,24 +268,6 @@ contains
 
     end subroutine EsMgr_recv_e
 
-    subroutine write_soln_to_file(e, prefix)
-
-        implicit none
-
-        type (solnVector_t), intent(in) :: e
-        character(len=*), intent(in), optional :: prefix
-
-        character(len=256) :: prefix_lcl
-
-        if (present(prefix)) then
-            prefix_lcl = prefix 
-        else
-            prefix_lcl = ""
-        end if
-
-        call write_solnVector(e, EsMgr_prefix//trim(prefix_lcl), EsMgr_ftype)
-
-    end subroutine write_soln_to_file
 
 
     subroutine int_create_e_param_place_holder(e, holder)
