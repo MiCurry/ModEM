@@ -169,20 +169,22 @@ contains
 
     end subroutine read_esoln_from_file
 
-    subroutine EsMgr_save(e, to, from)
+    subroutine EsMgr_save(e, to, from, prefix)
 
         implicit none
 
         type (solnVector_t), intent(inout) :: e
         integer, intent(in), optional :: to
         integer, intent(in), optional :: from
+        character(len=*), intent(in), optional :: prefix
+
 
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world == 0) then
             return
         end if
 
         if (EsMgr_save_in_file .and. .not. EsMgr_ctx % rank_world == 0) then
-            call write_soln_to_file(e)
+            call write_soln_to_file(e, prefix)
             return
         end if
 
@@ -232,13 +234,22 @@ contains
 
     end subroutine EsMgr_recv_e
 
-    subroutine write_soln_to_file(e)
+    subroutine write_soln_to_file(e, prefix)
 
         implicit none
 
         type (solnVector_t), intent(in) :: e
+        character(len=*), intent(in), optional :: prefix
 
-        call write_solnVector(e, EsMgr_prefix, EsMgr_ftype)
+        character(len=256) :: prefix_lcl
+
+        if (present(prefix)) then
+            prefix_lcl = prefix 
+        else
+            prefix_lcl = ""
+        end if
+
+        call write_solnVector(e, EsMgr_prefix//trim(prefix_lcl), EsMgr_ftype)
 
     end subroutine write_soln_to_file
 
