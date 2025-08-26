@@ -1054,6 +1054,7 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
      end if 
      if (.not. savedSolns )then
          d_temp=d
+         write(0,*) "Calling Master_job_fwdPred inside JmultT HERE2"
          call Master_job_fwdPred(sigma,d_temp,eAll_temp)
      else
          eAll_temp=eAll 
@@ -1097,6 +1098,11 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
      file_name='e.soln'
      !call write_solnVectorMTX(20,file_name,eAll_out)
 
+     write(0,*) "Master_JmultT - Finished Distribute_Taskes_JMultT"
+
+    if (EsMgr_save_in_file) then
+        call Master_job_PQMult(nTx, sigma, dsigma)
+    else
      do iper=1,nTx
          !e0=eAll%solns(iper)  
          !e =eAll_out%solns(iper)
@@ -1108,7 +1114,8 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
              s_hat(iper)=dsigma_temp
          end if
          call linComb_modelParam(ONE,dsigma,ONE,dsigma_temp,dsigma)
-     end do
+      end do
+     end if
 
      endtime=MPI_Wtime()
      time_used = endtime-starttime
@@ -1129,6 +1136,70 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
    
 end Subroutine Master_job_JmultT
 
+subroutine Master_job_PQMult(nTx, sigma, dsigma)
+
+    implicit none
+
+    integer, intent(in) :: nTx
+    type (modelParam_t), intent(in) :: sigma
+    type (modelParam_t), intent(inout) :: dsigma
+
+    character(len=*), parameter :: job_name = "PQMULT"
+    type(modelParam_t) :: dsigma_recv
+
+    integer :: dest, nTasks, remainder, iTx
+    integer :: iTx_min, iTx_max, i, j, k
+
+    write(0,*) "Inside PQMult!"
+
+    call create_worker_job_task_place_holder
+    dsigma_recv = sigma
+    nTasks = nTx / number_of_workers
+    remainder = modulo(nTx, number_of_workers)
+    iTx_max = 0
+
+    do dest = 1, number_of_workers
+        iTx_min = iTx_max + 1
+        iTx_max = iTx_min + nTasks - 1
+
+        if (remainder > 0) then
+            iTx_max = iTx_max + 1
+            remainder = remainder - 1
+        end if
+
+        if (iTx_max >= iTx_min) then
+            worker_job_task % what_to_do=trim(job_name)
+            worker_job_task % per_index = iTx_min
+            worker_job_task % pol_index = iTx_max
+
+            call Pack_worker_job_task
+
+            call MPI_Send(worker_job_package, Nbytes, MPI_PACKED, dest, FROM_MASTER, MPI_COMM_WORLD, ierr)
+            write(ioMPI,'(a10,a16,i5,a8,i5,a11,i5)')trim(job_name) ,': Send Per from ',iTx_min ,' to', iTx_max ,' to ', dest
+        end if
+    end do
+
+    remainder = modulo(nTx, number_of_workers)
+    iTx_max = 0
+
+    do dest = 1, number_of_workers
+        iTx_min = iTx_max + 1
+        iTx_max = iTx_min + nTasks - 1
+
+        if (remainder > 0) then
+            iTx_max = iTx_max + 1
+            remainder = remainder - 1
+        end if
+
+        if (iTx_max >= iTx_min) then
+            call create_model_param_place_holder(dsigma_recv)
+            call MPI_Recv(sigma_para_vec, Nbytes, MPI_PACKED, dest, FROM_WORKER, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+            call Unpack_model_para_values(dsigma_recv)
+            call linComb_modelParam(ONE, dsigma, ONE, dsigma_recv, dsigma)
+        end if
+    end do 
+
+end subroutine Master_job_PQMult
 
 !########################    Master_job_Jmult ##############################
 Subroutine Master_job_Jmult(mHat,m,d,eAll,comm)
@@ -1693,11 +1764,13 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
              ! In the 3D MT case there are two polarisations.
              ! In the 3D CSEM case there are one polarisation (for now).
              ! In the 2D MT case there are one polarisation.
+            
              which_per=per_index
              do ipol1=1,nPol_MPI
                  which_pol=ipol1
 
-                 call EsMgr_save(eAll_in % solns(which_per), prefix=".JmultT.", to=who, from=0)
+                 write(0,*) "Calling JMultT save - master"
+                 call EsMgr_save(eAll_in % solns(which_per), prefix=".JmultT.", to=who)
                  
                  !call create_e_param_place_holder(eAll_in%solns(which_per))
                  !call Pack_e_para_vec(eAll_in%solns(which_per))
@@ -1926,6 +1999,8 @@ Subroutine Worker_job(sigma,d, ctrl)
      ! 2019.05.08, Liu Zhongyin, add isite for rx in dataBlock_t
      integer                       :: isite
 
+     ! PQMULT
+     type (modelParam_t) :: dsigma_temp, dsigma_send, Qcomb
       
      ! time
      DOUBLE PRECISION                       :: time_passed, now, just
@@ -2054,7 +2129,7 @@ Subroutine Worker_job(sigma,d, ctrl)
                  ! and send it to the master
 
                  which_pol=1
-                 call EsMgr_save(e0, to=0, from=EsMgr_ctx % rank_current)
+                 call EsMgr_save(e0, to=0)
 
                  !call create_e_param_place_holder(e0) 
                  !call Pack_e_para_vec(e0)
@@ -2099,6 +2174,42 @@ Subroutine Worker_job(sigma,d, ctrl)
              call create_data_vec_place_holder(d, start_iTx=start_iTx, end_iTx=end_iTx)
              call Pack_data_para_vec(d)
              call MPI_Send(data_para_vec, NBytes, MPI_PACKED, 0, FROM_WORKER, MPI_COMM_WORLD, ierr)
+
+         elseif (trim(worker_job_task%what_to_do) .eq. 'PQMULT') then
+
+             start_iTx = worker_job_task % per_index
+             end_iTx = worker_job_task % pol_index
+             worker_job_task % taskid = taskid
+
+             call create_solnVector(grid, 1, e0)
+             call create_solnVector(grid, 1, e)
+
+             dsigma_temp = sigma
+             Qcomb = sigma
+             dsigma_send = sigma
+
+             call zero(dsigma_send)
+
+             do per_index=start_iTx, end_iTx
+                call zero(dsigma_temp)
+                call zero(Qcomb)
+
+                do pol_index = 1, get_nPol(per_index)
+                    call EsMgr_get(e, per_index, pol_index=pol_index, prefix='.JmultT')
+                end do
+
+                e0 % tx = per_index
+                e % tx = per_index
+
+                call PmultT(e0, sigma, e, dsigma_temp)
+                call QmultT(e0, sigma, d%d(per_index), Qcomb)
+                call scMultAdd(ONE, Qcomb, dsigma_temp)
+                call linComb_modelParam(ONE, dsigma_send, ONE, dsigma_temp, dsigma_send)
+             end do
+
+             call create_model_param_place_holder(dsigma_send)
+             call pack_model_para_values(dsigma_send)
+             call MPI_Send(sigma_para_vec, NBytes, MPI_PACKED, 0, FROM_WORKER, MPI_COMM_WORLD, ierr)
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'COMPUTE_J') then
              ! compute (explicit) J
@@ -2292,8 +2403,9 @@ Subroutine Worker_job(sigma,d, ctrl)
                  do ipol=1,nPol_MPI 
                      which_pol=ipol
 
-                     !call EsMgr_save(e0, to=rank_current, from=0)
-                     call EsMgr_get(e0, which_per, which_pol, from=0)
+                     write(0,*) "Worker_job - Calling EsMgr_get - ", per_index, pol_index
+                     call EsMgr_get(e0, per_index, pol_index=ipol, from=0)
+
                      !call create_e_param_place_holder(e0)
                      !call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0,     &
     !&                    FROM_MASTER,comm_current, STATUS, ierr)
@@ -2345,7 +2457,9 @@ Subroutine Worker_job(sigma,d, ctrl)
                  !call Pack_e_para_vec(e)
                  !call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
     !&                FROM_WORKER, comm_current, ierr)
-                 call EsMgr_save(e, to=0, from=rank_current)
+                 !call EsMgr_save(e, to=0, from=rank_current)
+                 write(0,*) "Worker_job - Calling EsMgr_save" 
+                 call EsMgr_save(e, to=0, prefix=".JmultT")
                  !deallocate(e_para_vec,worker_job_package)
              end if
              ! hasta la vista!
