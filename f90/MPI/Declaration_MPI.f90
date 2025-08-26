@@ -132,6 +132,20 @@ type :: define_worker_job
 type(define_worker_job), save :: worker_job_task
 !********************************************************************
 
+
+type :: ModEM_mpi_context_t
+    integer :: comm_current
+    integer :: comm_world
+    integer :: comm_local
+    integer :: rank_world
+    integer :: rank_local
+    integer :: rank_current
+    integer :: size_local
+    integer :: number_of_workers
+end type ModEM_mpi_context_t
+
+type(ModEM_mpi_context_t), target, save :: modem_ctx ! ModEM MPI Context
+
 Contains
 
 !##########################################################################

@@ -5,6 +5,7 @@ program Mod3DMT
 !              AUTHORS  Gary Egbert, Anna Kelbert & Naser Meqbel
 !              College of Earth, Ocean and Atmospheric Sciences
 
+     use EsolnManager
      use ModEM_timers
      use SensComp
      use SymmetryTest
@@ -13,6 +14,7 @@ program Mod3DMT
      use DCG
      use LBFGS
      use utilities
+
      !use mtinvsetup
 
 #ifdef MPI
@@ -43,6 +45,7 @@ program Mod3DMT
      call ModEM_timers_create("Total Time", .true.)
 #endif
 
+    
 
 #ifdef MPI
       if (taskid==0) then
@@ -61,6 +64,12 @@ program Mod3DMT
 #endif
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations
+
+    call EsMgr_init(grid, context=modem_ctx, &
+                          save_in_file=cUserDef % storeSolnsInFile, &
+                          prefix=cUserDef % prefix, &
+                          ftype=FTYPE_ASCII)
+
 #ifdef MPI
       call setGrid_MPI(grid)
     ! Check if a large grid file with E field is defined:
@@ -152,7 +161,7 @@ program Mod3DMT
       ! for debug
       ! write(6,*)'Reporting from Node #', taskid
       if (taskid.gt.0) then
-          call Worker_job(sigma0,allData)
+          call Worker_job(sigma0, allData, cUserDef)
           if (trim(worker_job_task%what_to_do) .eq. 'Job Completed')  then
               call deallGlobalData()
               call cleanUp_MPI()
