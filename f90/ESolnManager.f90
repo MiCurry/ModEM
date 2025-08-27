@@ -8,6 +8,8 @@ module ESolnManager
 
     implicit None
 
+    private
+
     type (solnVectorMTX_t) :: EsMgr_eAll
     type (ModEM_mpi_context_t), pointer :: EsMgr_ctx
 
@@ -15,23 +17,23 @@ module ESolnManager
     character(len=*), parameter :: FTYPE_BINARY = "BINARY"
     character(len=*), parameter :: FTYPE_NETCDF = "NETCDF"
     character(len=*), parameter :: FTYPE_HDF5 = "HDF5"
-
+    
     type (grid_t), pointer :: EsMgr_grid => null()
     character(len=25) :: EsMgr_ftype
     character(len=256) :: EsMgr_prefix
     logical :: EsMgr_save_in_file
 
+    public :: FTYPE_ASCII, FTYPE_BINARY, FTYPE_NETCDF, FTYPE_HDF5
     public :: EsMgr_init
     public :: EsMgr_create_eAll, EsMgr_create_e 
     public :: EsMgr_get
     public :: EsMgr_save
-    public :: FTYPE_ASCII, FTYPE_BINARY, FTYPE_NETCDF, FTYPE_HDF5
+    public :: EsMgr_save_in_file
 
 contains
 
     ! EsMgr_init - Initalizes the manager sets the default filetype
     ! and determines if the Esoln files should be saved or not
-    !
     subroutine EsMgr_init(grid, context, save_in_file, prefix, ftype)
 
         implicit none
@@ -150,7 +152,6 @@ contains
         end if
 
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world /= 0) then
-            write(0,*) "EsMgr_get - We are about to read"
             call read_esoln_from_file(e, iTx, pol_index, prefix=prefix)
             return
         end if
@@ -166,8 +167,6 @@ contains
         type (solnVector_t), intent(inout) :: e
         integer, intent(in), optional :: to
         character(len=*), intent(in), optional :: prefix
-
-        write(0,*) "Inside EsMgr - Save", Esmgr_save_in_file, EsMgr_ctx % rank_world, trim(prefix)
 
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world == 0) then
             return
@@ -206,8 +205,6 @@ contains
             prefix_lcl = ""
         end if
 
-        write(0,*) "Inside write_soln_to_file: ", trim(EsMgr_prefix), trim(prefix_lcl)
-
         call write_solnVector(e, trim(EsMgr_prefix)//trim(prefix_lcl), ftype=EsMgr_ftype, pol_index=iPol_lcl)
 
     end subroutine write_soln_to_file
@@ -235,8 +232,6 @@ contains
         else
             prefix_lcl = ""
         end if
-
-        write(0,*) "Read_esoln_from_file: ", iTx, iPol_lcl
 
         call read_solnVector(e, trim(EsMgr_prefix)//trim(prefix_lcl), ftype=EsMgr_ftype, pol_index=iPol_lcl)
 

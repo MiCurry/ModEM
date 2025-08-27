@@ -1054,7 +1054,6 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
      end if 
      if (.not. savedSolns )then
          d_temp=d
-         write(0,*) "Calling Master_job_fwdPred inside JmultT HERE2"
          call Master_job_fwdPred(sigma,d_temp,eAll_temp)
      else
          eAll_temp=eAll 
@@ -1097,8 +1096,6 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm)
      !call write_solnVectorMTX(10,file_name,eAll_temp)
      file_name='e.soln'
      !call write_solnVectorMTX(20,file_name,eAll_out)
-
-     write(0,*) "Master_JmultT - Finished Distribute_Taskes_JMultT"
 
     if (EsMgr_save_in_file) then
         call Master_job_PQMult(nTx, sigma, dsigma)
@@ -1768,14 +1765,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
              which_per=per_index
              do ipol1=1,nPol_MPI
                  which_pol=ipol1
-
-                 write(0,*) "Calling JMultT save - master"
                  call EsMgr_save(eAll_in % solns(which_per), prefix=".JmultT.", to=who)
-                 
-                 !call create_e_param_place_holder(eAll_in%solns(which_per))
-                 !call Pack_e_para_vec(eAll_in%solns(which_per))
-                 !call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, who,  &
-    !&             FROM_MASTER, comm_current, ierr) 
              end do   
          end if  
          write(ioMPI,'(a10,a16,i5,a8,i5,a11,i5)')trim(job_name),     &
@@ -1802,15 +1792,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          which_per=worker_job_task%per_index
          which_pol=worker_job_task%pol_index
 
-         !call EsMgr_save(eAll_out % solns(which_per), to=EsMgr_ctx % rank_current, from=who)
          call EsMgr_get(eAll_out % solns(which_per), which_per, 1, from=who)
-                  
-         !call create_e_param_place_holder(eAll_out%solns(which_per))
-  !       call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, who,FROM_WORKER,  &
-  !  &         comm_current, STATUS, ierr)
-         ! call get_nPol_MPI(eAll_out%solns(which_per)) 
-         ! if (nPol_MPI==1)  which_pol=1
-         !call Unpack_e_para_vec(eAll_out%solns(which_per))
 
          write(ioMPI,'(a10,a16,i5,a8,i5,a11,i5)')trim(job_name) ,        &
     &   ': Receive Per # ',which_per ,' and Pol # ', which_pol ,' from ',&
@@ -1868,11 +1850,6 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
              do ipol1=1,nPol_MPI
                  which_pol=ipol1
                  call EsMgr_save(eAll_in%solns(which_per), who)
-                 !call create_e_param_place_holder(eAll_in%solns(      &
-    !&                 which_per))
-    !             call Pack_e_para_vec(eAll_in%solns(which_per))
-    !             call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED,        &
-    !&                 who, FROM_MASTER, comm_current, ierr) 
              end do  
          end if 
          write(ioMPI,'(a10,a16,i5,a8,i5,a11,i5)')trim(job_name),      &
@@ -2130,12 +2107,6 @@ Subroutine Worker_job(sigma,d, ctrl)
 
                  which_pol=1
                  call EsMgr_save(e0, to=0)
-
-                 !call create_e_param_place_holder(e0) 
-                 !call Pack_e_para_vec(e0)
-                 !call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
-    !&                FROM_WORKER, comm_current, ierr) 
-
                  call reset_e_soln(e0)
              end if
              ! so long!
@@ -2157,7 +2128,6 @@ Subroutine Worker_job(sigma,d, ctrl)
 
                 do pol_index = 1, get_nPol(per_index)
                     call EsMgr_get(e0, e0 % tx, pol_index=pol_index)
-                    !call read_solnVector(e0, UserCtrl_ctrl % prefix, pol_index=pol_index)
                 end do
 
                 do i = 1, d % d(per_index) % nDt
@@ -2405,11 +2375,6 @@ Subroutine Worker_job(sigma,d, ctrl)
 
                      write(0,*) "Worker_job - Calling EsMgr_get - ", per_index, pol_index
                      call EsMgr_get(e0, per_index, pol_index=ipol, from=0)
-
-                     !call create_e_param_place_holder(e0)
-                     !call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0,     &
-    !&                    FROM_MASTER,comm_current, STATUS, ierr)
-    !                 call Unpack_e_para_vec(e0)
                  end do
                  call initSolverWithOutE0(per_index,sigma,grid,size_local,&
                      e,comb)
@@ -2453,12 +2418,6 @@ Subroutine Worker_job(sigma,d, ctrl)
                  call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
     &                FROM_WORKER, comm_current, ierr)
                  which_pol=1
-                 !call create_e_param_place_holder(e)
-                 !call Pack_e_para_vec(e)
-                 !call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
-    !&                FROM_WORKER, comm_current, ierr)
-                 !call EsMgr_save(e, to=0, from=rank_current)
-                 write(0,*) "Worker_job - Calling EsMgr_save" 
                  call EsMgr_save(e, to=0, prefix=".JmultT")
                  !deallocate(e_para_vec,worker_job_package)
              end if
