@@ -105,32 +105,49 @@ contains
 
     end subroutine EsMgr_init
 
-    subroutine EsMgr_create_e(e, iTx, nPol)
+    subroutine EsMgr_create_e(e, iTx, nPol, place_holder)
 
         implicit none
 
         type (solnVector_t), intent(inout) :: e
         integer, intent(in) :: iTx
         integer, intent(in), optional :: nPol
+        logical, intent(in), optional :: place_holder
 
-        call create_solnVector(EsMgr_grid, iTx, e)
+        logical :: place_holder_lcl
+
+        if (present(place_holder)) then
+            place_holder_lcl = place_holder
+        else
+            place_holder_lcl = EsMgr_save_in_file
+        end if
+
+        call create_solnVector(EsMgr_grid, iTx, e, place_holder=EsMgr_save_in_file)
 
     end subroutine EsMgr_create_e
 
-    subroutine EsMgr_create_eAll(eAll, nTx)
+    subroutine EsMgr_create_eAll(eAll, nTx, place_holder)
 
         implicit none
 
         type (solnVectorMTX_t), intent(inout) :: eAll
         integer, intent(in) :: nTx
-        integer :: iTx
+        logical, intent(in), optional :: place_holder
 
+        integer :: iTx
         type(solnVector_t) :: e
+        logical :: place_holder_lcl
+
+        if (present(place_holder)) then
+            place_holder_lcl = place_holder
+        else
+            place_holder_lcl = EsMgr_save_in_file
+        end if
 
         call create_solnVectorMTX(nTx, eAll)
 
         do iTx = 1, nTx
-            call create_solnVector(EsMgr_grid, iTx, e)
+            call create_solnVector(EsMgr_grid, iTx, e, place_holder=place_holder_lcl)
             call copy_solnVector(eAll % solns(iTx), e)
         end do
 
