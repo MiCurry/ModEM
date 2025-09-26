@@ -1,0 +1,248 @@
+{
+    "@context": "https://w3id.org/codemeta/3.0",
+    "type": "SoftwareSourceCode",
+    "applicationCategory": "Electromagnetic, Geophysical",
+    "applicationSubCategory": "Electromagnetic Inversion, Magnetotelluric",
+    "name": "ModEM",
+    "author": [
+        {
+            "@id": "https://orcid.org/0000-0003-4395-398X",
+            "@type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "Harvard & Smithsonian"
+            },
+            "familyName": "Kelbert",
+            "givenName": "Anna"
+        },
+        {
+            "@id": "https://orcid.org/0000-0003-1276-8538",
+            "@type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "Oregon State University - College of Earth, Ocean, and Atmospheric Sciences"
+            },
+            "familyName": "Egbert",
+            "givenName": "Gary"
+        },
+        {
+            "@id": "https://orcid.org/0000-0003-2459-4838",
+            "@type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "ModEM Geophysics"
+            },
+            "familyName": "Meqbel",
+            "givenName": "Naser"
+        },
+        {
+            "@id": "https://orcid.org/0000-0002-5457-0557",
+            "@type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "China University of Geosciences Beijing"
+            },
+            "familyName": "Dong",
+            "givenName": "Hao"
+        }
+    ],
+    "codeRepository": "https://github.com/magnetotellurics/ModEM",
+    "contributor": [
+        {
+            "@id": "_:contributor_1",
+            "@type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "Inalab Consulting Inc."
+            },
+            "email": "mcurry@inalabgroup.com",
+            "familyName": "Curry",
+            "givenName": "Miles"
+        },
+        {
+            "@id": "_:contributor_2",
+            "@type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "USGS"
+            },
+            "familyName": "Wilbur",
+            "givenName": "Spencer"
+        },
+        {
+            "@id": "_:contributor_3",
+            "@type": "Person",
+            "familyName": "Smirnova",
+            "givenName": "Maria"
+        },
+        {
+            "@id": "_:contributor_4",
+            "@type": "Person",
+            "familyName": "Smirnova",
+            "givenName": "Maxim"
+        },
+        {
+            "@id": "_:contributor_5",
+            "@type": "Person",
+            "familyName": "Yang",
+            "givenName": "Bo"
+        },
+        {
+            "@id": "_:contributor_6",
+            "@type": "Person",
+            "familyName": "Liu",
+            "givenName": "Zhongyin"
+        },
+        {
+            "@id": "_:contributor_7",
+            "@type": "Person",
+            "familyName": "Banik",
+            "givenName": "Marcos"
+        }
+    ],
+    "dateCreated": "2014-05-01",
+    "datePublished": "2014-05-01",
+    "description": "A modular system for inversion of electromagnetic geophysical data.",
+    "downloadUrl": "https://github.com/magnetotellurics/ModEM/releases",
+    "keywords": [
+        "Electromagnetic",
+        "Geophysics",
+        "Magnetotelluric"
+    ],
+    "programmingLanguage": "Fortran",
+    "buildInstructions" : [
+        "https://github.com/magnetotellurics/ModEM/blob/main/README.md",
+        "https://github.com/magnetotellurics/ModEM/blob/main/doc/userguide/ModEM_UserGuide.pdf"
+    ],
+    "softwareSuggestions": [
+        "https://github.com/magnetotellurics/ModEM-Examples",
+        "https://github.com/magnetotellurics/ModEM-Tools"
+    ],
+    "review": {
+        "type": "Review",
+        "reviewAspect": "Article"
+    },
+    "softwareHelp" : [
+        "https://github.com/magnetotellurics/ModEM/blob/main/README.md",
+        "https://github.com/magnetotellurics/ModEM/blob/main/doc/userguide/ModEM_UserGuide.pdf"
+    ],
+    "softwareRequirements": [
+        "https://www.netlib.org/lapack/",
+        "https://www.netlib.org/blas/"
+    ],
+    "developmentStatus": "active",
+    "issueTracker": "https://github.com/magnetotellurics/ModEM/issues",
+    "isAccessibleForFree" : "True",
+    "operatingSystems" : ["Windows", "Linux", "OSX"],
+    "releaseNotes" : "https://github.com/magnetotellurics/ModEM/releases",
+    "readMe" : "https://github.com/magnetotellurics/ModEM/blob/main/README.md",
+    "sameAs" : "",
+    "url" : "https://github.com/magnetotellurics/ModEM",
+    "citation": [
+        {
+            "@id" : "https://doi.org/10.1016/j.cageo.2014.01.010",
+            "@type" : "ScholarylyArticle",
+            "Name": "ModEM: A modular system for inversion of electromagnetic geophysical data",
+            "datePublished" : "2014-05",
+            "sameAs" : "https://doi.org/10.1016/j.cageo.2014.01.010",
+            "author" : [
+                "https://orcid.org/0000-0003-4395-398X",
+                "https://orcid.org/0000-0003-1276-8538",
+                "https://orcid.org/0000-0003-2459-4838",
+                {
+                    "@id": "https://orcid.org/0000-0003-2158-7384",
+                    "@type": "person",
+                    "familyName": "Tandon",
+                    "givenName": "Kush",
+                    "affiliation":{
+                        "type":"Organization",
+                        "name":"Blueware/Shell"
+                    }
+                }
+            ],
+            "isPartOf" : {
+                "@type": "PublicationIssue",
+                "issueNumber" : "1",
+                "datePublished" : "2014",
+                "isPartOf" : {
+                    "@id" : "#periodical",
+                    "@type" : [
+                        "PublicationVolumne",
+                        "Periodical"
+                    ],
+                    "name" : "Computers & Geosciences",
+                    "issn" : "0098-3004",
+                    "volumeNumber" : "66"
+                }
+            },
+            "pageStart": "40",
+            "pageEnd" : "53"
+        },
+        {
+            "@type" : "ScholarylyArticle",
+            "Name": "Computational recipes for electromagnetic inverse problems",
+            "datePublished" : "2012-04",
+            "sameAs" : "https://doi.org/10.1111/j.1365-246X.2011.05347.x",
+            "author" : [
+                "https://orcid.org/0000-0003-4395-398X",
+                "https://orcid.org/0000-0003-1276-8538"
+            ],
+            "isPartOf" : {
+                "@type": "PublicationIssue",
+                "issueNumber" : "1",
+                "datePublished" : "2012",
+                "isPartOf" : {
+                    "@id" : "#periodical",
+                    "@type" : [
+                        "PublicationVolumne",
+                        "Periodical"
+                    ],
+                    "name" : "Geophysical Journal International",
+                    "issn:" : "0956-540X",
+                    "volumeNumber" : "189"
+                }
+            },
+            "pageStart": "241",
+            "pageEnd" : "267"
+        },
+        {
+            "@type" : "ScholarylyArticle",
+            "Name": "Hybrid CPU-GPU solution to regularized divergence-free curl-curl equations for electromagnetic inversion problems",
+            "datePublished" : "2012-04",
+            "sameAs" : "https://doi.org/10.1111/j.1365-246X.2011.05347.x",
+            "author" : [
+                "https://orcid.org/0000-0002-5457-0557",
+                { 
+                    "@type" : "Person",
+                    "familyName" : "Sun",
+                    "givenName" : "Kai",
+                    "affiliation" : { "type" : "Organization", "name": "Nvidia" }
+                },
+                "https://orcid.org/0000-0003-1276-8538",
+                "https://orcid.org/0000-0003-4395-398X",
+                "https://orcid.org/0000-0003-2459-4838"
+            ],
+            "isPartOf" : {
+                "@type": "PublicationIssue",
+                "issueNumber" : "1",
+                "datePublished" : "2024",
+                "isPartOf" : {
+                    "@id" : "#periodical",
+                    "@type" : [
+                        "PublicationVolumne",
+                        "Periodical"
+                    ],
+                    "name" : "Geophysical Journal International",
+                    "issn:" : "0098-3004",
+                    "datePublished" : "2024-02",
+                    "volumeNumber" : "184"
+                }
+            },
+            "pagination": "105518"
+        }
+    ],
+    "referencePublication" : [
+        "https://doi.org/10.1016/j.cageo.2014.01.010",
+        "https://doi.org/10.1111/j.1365-246X.2011.05347.x"
+    ]
+}
