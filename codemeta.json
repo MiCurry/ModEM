@@ -136,7 +136,7 @@
     "operatingSystems" : ["Windows", "Linux", "OSX"],
     "releaseNotes" : "https://github.com/magnetotellurics/ModEM/releases",
     "readMe" : "https://github.com/magnetotellurics/ModEM/blob/main/README.md",
-    "sameAs" : "",
+    "sameAs" : "https://doi.org/10.5281/zenodo.17229555",
     "url" : "https://github.com/magnetotellurics/ModEM",
     "citation": [
         {
