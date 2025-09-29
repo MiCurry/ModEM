@@ -36,34 +36,6 @@ keywords:
 identifiers:
   - type: doi
     value: 10.5281/zenodo.17229555
-preferred-citation:
-    type: article
-    title: "ModEM: A modular system for inversion of electromagnetic geophysical data"
-    authors:
-      - given-names: Anna
-        family-names: Kelbert
-        orcid: 'https://orcid.org/0000-0003-4395-398X'
-        affiliation: Harvard & Smithsonian
-      - given-names: Gary
-        family-names: Egbert
-        affiliation: Oregon State University
-        orcid: 'https://orcid.org/0000-0003-1276-8538'
-      - given-names: Naser
-        family-names: Meqbel
-        affiliation: ModEM Geophysics
-        orcid: 'https://orcid.org/0000-0003-2459-4838'
-      - given-names: Kush
-        family-names: Tandon
-        affiliation: Blueware/Shell
-        orcid: 'https://orcid.org/0000-0003-2158-7384'
-    journal: Computers & Geosciences
-    month: 5
-    year: 2014
-    volume: 66
-    start: 40
-    end: 53
-    ISSN: 0098-3004
-    doi: 10.1016/j.cageo.2014.01.010
 references:
   - type: article
     scope: Cite this paper for any usages of ModEM
