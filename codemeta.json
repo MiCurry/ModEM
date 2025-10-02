@@ -239,6 +239,34 @@
                 }
             },
             "pagination": "105518"
+        },
+        {
+            "@type" : "ScholarylyArticle",
+            "Name": "Divergence-free solutions to electromagnetic forward and adjoint problems: a regularization approach",
+            "datePublished" : "2019-02",
+            "sameAs" : "https://doi.org/10.1093/gji/ggy462",
+            "author" : [
+                "https://orcid.org/0000-0002-5457-0557",
+                "https://orcid.org/0000-0003-1276-8538"
+            ],
+            "isPartOf" : {
+                "@type": "PublicationIssue",
+                "issueNumber" : "2",
+                "datePublished" : "2019",
+                "isPartOf" : {
+                    "@id" : "#periodical",
+                    "@type" : [
+                        "PublicationVolumne",
+                        "Periodical"
+                    ],
+                    "name" : "Geophysical Journal International",
+                    "issn:" : "0956-540X",
+                    "datePublished" : "2019-02",
+                    "volumeNumber" : "216"
+                }
+            },
+            "pageStart" : "906",
+            "pageEnd" : "918"
         }
     ],
     "referencePublication" : [

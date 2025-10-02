@@ -85,6 +85,26 @@ references:
     ISSN: 0956-540X
     doi: 10.1111/j.1365-246X.2011.05347.x
   - type: article
+    scope: Cite this paper if any of the divergence-free algorithms are used (i.e. SP and SP2 version)
+    title: "Divergence-free solutions to electromagnetic forward and adjoint problems: a regularization approach"
+    authors:
+      - given-names: Hao
+        family-names: Dong
+        orcid: 'https://orcid.org/0000-0002-5457-0557'
+        affiliation: China University of Geosciences Beijing
+      - given-names: Gary
+        family-names: Egbert
+        affiliation: Oregon State University
+        orcid: 'https://orcid.org/0000-0003-1276-8538'
+    journal: Geophysical Journal International
+    month: 2
+    year: 2019
+    volume: 216
+    start: 906
+    end: 918
+    ISSN: 0956-540X
+    doi: 10.1093/gji/ggy462
+  - type: article
     title: Hybrid CPU-GPU solution to regularized divergence-free curl-curl equations for electromagnetic inversion problems
     scope: Cite this paper if you used the GPU enabled version of ModEM
     authors:
