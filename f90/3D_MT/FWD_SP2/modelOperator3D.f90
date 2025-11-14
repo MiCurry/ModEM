@@ -150,6 +150,10 @@ Contains
          deallocate(VomegaMuSig)
       endif
 
+      if(allocated(VomegaMuSigLoc)) then
+         deallocate(VomegaMuSigLoc)
+      endif
+
       ! and the cell conductivities
       ! note that sigma_C is only needed to set up boundary conditions
       call deall_rscalar(sigma_C)
@@ -751,6 +755,8 @@ Contains
       enddo
       deallocate(Lblk)
       deallocate(Ublk)
+      deallocate(isizes)
+      deallocate(isubs)
       return
    end subroutine
 

@@ -1204,6 +1204,11 @@ Contains
          deallocate(stemp)
          call deall(tmpvec)
      endif
+     ! deallocate(phi0)
+     deallocate(isizes)
+     deallocate(isubs)
+     deallocate(displs)
+     deallocate(xlocal)
      deallocate(blocal)
      deallocate(VomegaMuSigLoc) 
      deallocate(KSSiter%rerr)

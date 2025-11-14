@@ -984,7 +984,7 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
   logical                                       :: adjoint, ilu_adjt, converged
   ! fine-grain parallel related
   integer                                       :: rank_local, size_local, ierr
-  complex (kind=prec),allocatable, dimension(:) :: xbuff, rbuff, bbuff
+  complex (kind=prec),allocatable, dimension(:) :: xbuff, bbuff
   integer,allocatable,dimension(:)              :: isizes, displs
   integer                                       :: fsize, lsize
   ! buffer 
@@ -3481,7 +3481,7 @@ subroutine cuBiCGfg(b,x,KSPiter,comm_local,device_idx,adjt)
       ! fine-grain parallel related    
       integer                                        :: rank_local, size_local
       integer,target                                 :: size_nccl, rank_nccl
-      complex (kind=prec),pointer, dimension(:)      :: xbuff, rbuff, bbuff
+      complex (kind=prec),pointer, dimension(:)      :: xbuff, bbuff
       complex (kind=prec),target                     :: bdotLoc
       integer (c_size_t), allocatable, dimension(:)  :: isizes, displs
       integer (c_size_t)                             :: fsize, lsize
@@ -3525,7 +3525,6 @@ subroutine cuBiCGfg(b,x,KSPiter,comm_local,device_idx,adjt)
       type(c_ptr) :: timePtr
       type(c_ptr) :: xBuffPtr
       type(c_ptr) :: bBuffPtr
-      type(c_ptr) :: rBuffPtr
       ! type(ncclUniqueId)  :: uid          ! nccl id
       ! type(ncclComm)      :: comm_nccl    ! nccl communicator
       type(c_ptr)         :: rankPtr      

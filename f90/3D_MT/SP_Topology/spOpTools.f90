@@ -1690,6 +1690,10 @@ Contains
       real                                  ::  nrow
       integer, allocatable, dimension(:)    ::  rowT
 
+      ! just in case Y is already allocated
+      if (allocated(Y)) then
+          deallocate(Y)
+      end if
       nrow = size(X)
       if (nrow .lt. np) then
           call errStop('number of process is larger than number of rows!')
@@ -1742,6 +1746,10 @@ Contains
       real                                  ::  nrow
       integer, allocatable, dimension(:)    ::  rowT
 
+      ! just in case Y is already allocated
+      if (allocated(Y)) then
+          deallocate(Y)
+      end if
       nrow = size(X)
       if (nrow .lt. np) then
           call errStop('number of process is larger than number of rows!')
