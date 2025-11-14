@@ -297,7 +297,7 @@ Contains
      if (narg > 1) then
         write(6,*) 'Running job -',job,' with command line options:'
         do k = 1,narg-1
-          ! write(6,'(x1a)',advance='no') trim(temp(k)) # old format
+          ! write(6,'(x1a)',advance='no') trim(temp(k)) ! old format
           write(6,'(x,A)',advance='no') trim(temp(k))
         end do
         write(6,*)
