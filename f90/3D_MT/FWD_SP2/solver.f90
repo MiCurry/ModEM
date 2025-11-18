@@ -4681,8 +4681,8 @@ subroutine cuBiCGfg(b,x,KSPiter,comm_local,device_idx,adjt)
           write(6,'(A, I4)') 'Error setting device flags: ',ierr2
           call ModEM_abort()
       end if 
-      deallcate(isizes)
-      deallcate(displs)
+      deallocate(isizes)
+      deallocate(displs)
       return
 end subroutine cuBiCGfg ! cuBiCGfg
 #endif
