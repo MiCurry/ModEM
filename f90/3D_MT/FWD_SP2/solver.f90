@@ -1039,6 +1039,8 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
       KSPiter%niter=1
       KSPiter%failed=.false.
       KSPiter%rerr=0.0
+      deallocate(isizes)
+      deallocate(displs)
       return
   endif
   ! firstly allocate for the buffer
@@ -1062,6 +1064,8 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
       KSPiter%niter=1
       KSPiter%failed=.false.
       KSPiter%rerr(1)=real(rnorm/bnorm)
+      deallocate(isizes)
+      deallocate(displs)
       deallocate(xbuff)
       deallocate(R)
       return 
@@ -1217,6 +1221,8 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
   deallocate(SH)
   deallocate(V)
   deallocate(T)
+  deallocate(isizes)
+  deallocate(displs)
 end subroutine BiCGfg ! BICGp
 #endif
 
@@ -4132,7 +4138,7 @@ subroutine cuBiCGfg(b,x,KSPiter,comm_local,device_idx,adjt)
       ierr2 = ierr2 + ierr
       if (ierr2 .ne. 0 ) then
           write(6, *) " error with SpMV operation ", ierr2
-          stop
+          call ModEM_abort()
       end if
       ! now calculate the residual
       ! R = -Ax 
@@ -4675,6 +4681,8 @@ subroutine cuBiCGfg(b,x,KSPiter,comm_local,device_idx,adjt)
           write(6,'(A, I4)') 'Error setting device flags: ',ierr2
           call ModEM_abort()
       end if 
+      deallocate(isizes)
+      deallocate(displs)
       return
 end subroutine cuBiCGfg ! cuBiCGfg
 #endif

@@ -104,7 +104,7 @@ subroutine init_BC_from_file(grid,nTx_nPol)
      call create_cboundary(grid,BC)
      
      
-     allocate (BC_from_file(nTx_nPol), STAT=status)
+     allocate(BC_from_file(nTx_nPol), STAT=status)
      do j=1,nTx_nPol
        BC_from_file(j)=BC
      end do
