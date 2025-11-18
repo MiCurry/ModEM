@@ -1162,6 +1162,8 @@ Contains
      call deall_spMatCSR(Alocal) ! release the temp sp matrix
      call deall_spMatCSR(Llocal) ! release the temp sp matrix
      call deall_spMatCSR(Ulocal) ! release the temp sp matrix
+     call deall_spMatCSR(LHlocal) ! release the temp sp matrix
+     call deall_spMatCSR(UHlocal) ! release the temp sp matrix
      if (rank_local.eq.0) then ! leader prepare the results...
          e(EDGEi) = ei
          !  After solving symetrized system, need to do different things for

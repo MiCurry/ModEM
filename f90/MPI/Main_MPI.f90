@@ -1971,9 +1971,9 @@ Subroutine Worker_job(sigma,d)
                  call Pack_e_para_vec(e0)
                  call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
     &                FROM_WORKER, comm_current, ierr) 
-                 call reset_e_soln(e0)
              end if
              ! so long!
+             call reset_e_soln(e0)
              now = MPI_Wtime()
              time_passed =  now - previous_time
              previous_time = now
@@ -2141,6 +2141,7 @@ Subroutine Worker_job(sigma,d)
                  end do    
              end if
              ! Das vidania
+             call reset_e_soln(e0)
              now = MPI_Wtime()
              time_passed = now - previous_time
              previous_time = now
@@ -2589,7 +2590,7 @@ Subroutine Worker_job(sigma,d)
     &                  ,des_index, FROM_WORKER, comm_local, STATUS, ierr)
                      call Unpack_worker_job_task
                  end do
-                   ! all workers report finished
+                 ! all workers report finished
              end if
 #if defined(FG) && (defined(CUDA) || defined(HIP))
              if ((size_local .gt. 1) .and. (ncclIsInit .ne. 0)) then
