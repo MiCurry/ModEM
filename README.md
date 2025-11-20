@@ -391,3 +391,13 @@ secondary field formulation option in ModEM to be physically correct.**
 
 **Using spherical coordinates with the traditional MT source setup has not been
 shown to be physically accurate.**
+
+# Support
+
+Support for ModEM may be limited at times, but we will do our best to respond to
+issues/bugs/questions and pull requests.
+
+For bugs, issues and questions, please open a GitHub Issue on this Repository.
+
+Please feel free to open a pull request with any changes. We do not guarentee
+changes will be merged in, but we welcome all contributions.
