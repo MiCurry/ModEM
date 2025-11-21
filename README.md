@@ -108,7 +108,7 @@ Where `type` is either: `MPI, release, debug`:
  with `-O0` (no optimizations) and debug symbols (`-g`, bounds checking ,etc)
 
 Of course, any generated makefile can be altered as you see fit. For instance,
-it is often helpful to add the `-g` to copmile with debug symbols when working
+it is often helpful to add the `-g` to compile with debug symbols when working
 with an MPI makefile.
 
 ## Compiling
@@ -151,7 +151,7 @@ and passing it `MPI` as the type.
 
 While the [User's Guide][Users-Guide] is the best resource for information on
 running ModEM, information can also be found by running the `Mod2DMT` or
-`Mod3DMT` executables with no arguments. Furthurmore, specifying the job flag
+`Mod3DMT` executables with no arguments. Furthermore, specifying the job flag
 with no other arguments will produce a detailed usage description for that job
 type.  For example: `./Mod3DMT -F` will produce a detailed description of
 options for forward modeling.
@@ -196,7 +196,7 @@ When running ModEM with MPI, you **must** use at least **two** MPI tasks. For
 all versions of ModEM, except SP2 compiled with `-DFG`, the max number of MPI
 tasks you can use is `(2 x nTransmitters) + 1`. Where the number of transmitters
 is the number of periods/frequencies. Thus you can run with 9 tasks: 4
-transmitters multipled by 2 polarizations + 1 main task:
+transmitters multiplied by 2 polarizations + 1 main task:
 
 ```bash
 $ mpiexec -n 9 ./Mod3DMT -F m1.ws Templdate_de.dat fwd.BLOCK2.dat esoln.BLOCK2.dat
@@ -304,7 +304,7 @@ sections above.
 It might be helpful to specify additional mount points, for instance it might
 be helpful to mount a work directory, such as the ModEM-Examples repository:
 
-`
+
 ```bash
 $ docker run --mount=type=bind,source=/abosolute/path/to/ModEM,target=/root/ModEM \
              --mount=type=bind,source=/home/users/uname/ModEM-Examples,target=/root/ModEM-Examples \
@@ -399,5 +399,5 @@ issues/bugs/questions and pull requests.
 
 For bugs, issues and questions, please open a GitHub Issue on this Repository.
 
-Please feel free to open a pull request with any changes. We do not guarentee
+Please feel free to open a pull request with any changes. We do not guarantee
 changes will be merged in, but we welcome all contributions.

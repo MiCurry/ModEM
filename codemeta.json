@@ -194,7 +194,7 @@
                 "isPartOf" : {
                     "@id" : "#periodical",
                     "@type" : [
-                        "PublicationVolumne",
+                        "PublicationVolume",
                         "Periodical"
                     ],
                     "name" : "Geophysical Journal International",
@@ -229,7 +229,7 @@
                 "isPartOf" : {
                     "@id" : "#periodical",
                     "@type" : [
-                        "PublicationVolumne",
+                        "PublicationVolume",
                         "Periodical"
                     ],
                     "name" : "Geophysical Journal International",
@@ -256,7 +256,7 @@
                 "isPartOf" : {
                     "@id" : "#periodical",
                     "@type" : [
-                        "PublicationVolumne",
+                        "PublicationVolume",
                         "Periodical"
                     ],
                     "name" : "Geophysical Journal International",
@@ -297,7 +297,7 @@
                 "isPartOf" : {
                     "@id" : "#periodical",
                     "@type" : [
-                        "PublicationVolumne",
+                        "PublicationVolume",
                         "Periodical"
                     ],
                     "name" : "Computers & Geosciences",
