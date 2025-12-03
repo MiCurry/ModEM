@@ -83,4 +83,4 @@ octave-workspace
 *.log
 
 # Sphinx/HMTL Doc Ignore Build output
-doc/build/
+docs/build/
