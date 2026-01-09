@@ -41,3 +41,9 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
 
     target_link_libraries(${MODEM_EXE} PRIVATE ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
 endif()
+
+if (BUILD_GPU STREQUAL "CUDA")
+    target_link_libraries(${MODEM_EXE} PRIVATE "-lcudart -lcusparse -lnvidia-ml -lcuda -lstdc++")
+elseif (BUILD_GPU STREQUAL "HIP")
+    target_link_libraries(${MODEM_EXE} PRIVATE "-lamdhip64 -lhipblas -lhipsparse -lstdc++")
+endif()

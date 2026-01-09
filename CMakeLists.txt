@@ -49,6 +49,12 @@ if (BUILD_MPI)
         add_compile_definitions(MPI)
 endif()
 
+if (BUILD_GPU STREQUAL "CUDA)
+        add_compiler_definitions(CUDA)
+elseif (BUILD_GPU STREQUAL "HIP")
+        add_compiler_definitions(HIP)
+
+endif()
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     add_compile_options(
@@ -75,7 +81,6 @@ elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
 else()
     message(FATAL_ERROR "Unknown/Unsupported Fortran Compiler: '${CMake_Fortran_COMPILER_ID}' - Supported compilers are < GNU | Ifort")
 endif()
-
 
 # Source Code
 add_subdirectory(f90)
