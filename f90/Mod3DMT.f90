@@ -19,7 +19,9 @@ program Mod3DMT
      Use Main_MPI
 #endif
 
+asef ijli 
      implicit none
+ijlaijef 
 
      ! Character-based information specified by the user
      type (userdef_control) :: cUserDef
