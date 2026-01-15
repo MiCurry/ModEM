@@ -83,32 +83,5 @@ if (FG)
         add_compile_definitions(FG)
 endif()
 
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-    add_compile_options(
-        $<$<COMPILE_LANGUAGE:Fortran>:-cpp>
-        $<$<COMPILE_LANGUAGE:Fortran>:-O3>
-        $<$<COMPILE_LANGUAGE:Fortran>:-ffree-line-length-none>
-        $<$<COMPILE_LANGUAGE:Fortran>:-fallow-argument-mismatch>
-    )
-elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
-    add_compile_options(
-        $<$<COMPILE_LANGUAGE:Fortran>:-O3>
-        $<$<COMPILE_LANGUAGE:Fortran>:-fpp>
-        $<$<COMPILE_LANGUAGE:Fortran>:-w>
-    )
-    add_link_options(
-        "-L${MKLROOT}/lib/intel64"
-        "-lmkl_intel_lp64"
-        "-lmkl_intel_thread"
-        "-lmkl_core"
-        "-lpthread"
-        "-qopenmp"
-        "-parallel"
-    )
-else()
-    message(FATAL_ERROR "Unknown/Unsupported Fortran Compiler: '${CMake_Fortran_COMPILER_ID}' - Supported compilers are < GNU | Ifort")
-endif()
-
-
 # Source Code
 add_subdirectory(f90)

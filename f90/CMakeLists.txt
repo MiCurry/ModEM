@@ -25,37 +25,43 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
 
         $<$<CONFIG:DEBUG>:-O0>
         $<$<CONFIG:DEBUG>:-g>
-        $<$<CONFIG:DEBUG>:-fp-stack-check>
         $<$<CONFIG:DEBUG>:-fbacktrace>
         $<$<CONFIG:DEBUG>:-fbounds-check>
     )
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
-    find_package(MKL REQUIRED) # Or find_package(BLAS REQUIRED)
+    enable_language(C)
+    find_library(MKL_INTEL_LP64 mkl_intel_lp64 HINTS $ENV{MKLROOT}/lib/intel64 ...)
+    find_library(MKL_INTEL_THREAD mkl_intel_thread HINTS $ENV{MKLROOT}/lib/intel64 ...)
+    find_library(MKL_CORE_LIB mkl_core HINTS $ENV{MKLROOT}/lib/intel64 ...)
+    find_package(Threads REQUIRED)
 
     target_compile_options(
         ${MODEM_EXE}
         PRIVATE
+        -fpp
         $<$<CONFIG:RELEASE>:-O3>
         $<$<CONFIG:RELEASE>:-w>
-
         $<$<CONFIG:DEBUG>:-O0>
-        $<$<COMPILE_LANGUAGE:Fortran>:-ffp-stack-check>
+        $<$<COMPILE_LANGUAGE:Fortran>:-fp-stack-check>
         $<$<COMPILE_LANGUAGE:Fortran>:-g>
         $<$<COMPILE_LANGUAGE:Fortran>:-traceback>
         $<$<COMPILE_LANGUAGE:Fortran>:-debug extend>
         $<$<COMPILE_LANGUAGE:Fortran>:-check bounds>
         $<$<COMPILE_LANGUAGE:Fortran>:-heap-array>
     )
+    target_link_libraries(
+        ${MODEM_EXE}
+        PRIVATE
+        ${MKL_INTEL_LP64}
+        ${MKL_INTEL_THREAD}
+        ${MKL_CORE_LIB}
+        Threads::Threads
+    )
     target_link_options(
         ${MODEM_EXE}
         PRIVATE
-        "-L${MKLROOT}/lib/intel64"
-        "-lmkl_intel_lp64"
-        "-lmkl_intel_thread"
-        "-lmkl_core"
-        "-lpthread"
-        "-qopenmp"
-        "-parallel"
+        -qopenmp
+        -parallel
     )
 else()
     message(FATAL_ERROR "Unknown/Unsupported Fortran Compiler: '${CMake_Fortran_COMPILER_ID}' - Supported compilers are < GNU | Ifort")
