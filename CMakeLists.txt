@@ -7,17 +7,17 @@ project(ModEM VERSION 0
 enable_language(Fortran)
 
 option(BUILD_MPI "Build MPI version of MPI" ON)
-option(FG "Build the Fine-Grained ModEM Version - (Only compatiable with SP2)" OFF)
+option(FINED_GRAINED "Build the Fine-Grained ModEM Version - (Only compatiable with SP2)" OFF)
 option(USE_C_TIMERS "Use the C timers in ModEM_timers" OFF)
 # option(DEBUG "Use debugging flags and turn off optimizations" OFF)
 
 set(FORWARD_FLAVOR "SP2" CACHE STRING "Set the forward flavor: < MF | SP | SP2 >")
-set(MODEM_BUILD_DIMS "3D" CACHE STRING "Specify whether to build either the 2D or 3D versino of ModEM < 2D | 3D >")
+set(MODEM_BUILD_DIMS "3D" CACHE STRING "Specify whether to build either the 2D or 3D version of ModEM < 2D | 3D >")
 set(BUILD_GPU "OFF" CACHE STRING "Specify whether to build GPU options: < OFF | CUDA | HIP >")
 
 set(SUPPORTED_FORWARD_FLAVORS "MF;SP;SP2")
 set(SUPPORTED_MODEM_DIMS "2D;3D")
-set(SUPPORTED_GPU_OPTS "off;OFF;CUDA;HIP")
+set(SUPPORTED_GPU_OPTS "OFF;CUDA;HIP")
 
 if (USE_C_TIMERS)
         enable_language(C)

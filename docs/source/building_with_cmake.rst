@@ -54,17 +54,17 @@ Now, we can run CMake:
 
 .. code-block:: bash
 
-    $ cmake -S .. -B . -DCMAKE_Fortran_COMPILER=mpifort
+    $ cmake .. -DCMAKE_Fortran_COMPILER=mpifort
 
-In the above command, the ``-S ..`` says that CMake should look in the directory
-above for the source and the ``-B .`` specifies that CMake should build in the
-current working directory.
+In the above command, the ``..`` says that CMake should look in the directory
+above for the source. This will make cmake build in the current working
+direcotry, outside of the source.
 
 The above command prints some output:
 
 .. code-block:: bash
 
-    $ cmake -S .. -B . -DCMAKE_Fortran_COMPILER=mpifort
+    $ cmake .. -DCMAKE_Fortran_COMPILER=mpifort
     -- The Fortran compiler identification is LLVMFlang 20.1.8
     -- Detecting Fortran compiler ABI info
     -- Detecting Fortran compiler ABI info - done
@@ -100,8 +100,7 @@ difficulties finding them, you can specify them by using the
 
 .. code-block:: bash
 
-    $ cmake -S .. -B -DLAPACK_LIBRARIES=/path/to/lapacklib/liblapack.a -DBLAS_LIBRARIES=/path/to/lablaslib/libblas.a
-
+    $ cmake .. -DLAPACK_LIBRARIES=/path/to/lapacklib/liblapack.a -DBLAS_LIBRARIES=/path/to/lablaslib/libblas.a
 
 After running CMake command above, and you see that the build files have been
 written succesfully, you'll be able to call ``make`` and build ModEM:
@@ -180,7 +179,7 @@ Again, once can use the following to display all the avaliable options:
 
     $ mkdir build
     $ cd build
-    $ cmake -B .. -S . -LH
+    $ cmake .. -LH
 
 * 2D/3D Builds:
     * ``-DMODEM_BUILD_DIMS=<2D | 3D>``
@@ -218,7 +217,7 @@ difficulties finding them, you can specify them by using the
 
 .. code-block:: bash
 
-    $ cmake -S .. -B -DLAPACK_LIBRARIES=/path/to/lapacklib/liblapack.a -DBLAS_LIBRARIES=/path/to/lablaslib/libblas.a
+    $ cmake .. -DLAPACK_LIBRARIES=/path/to/lapacklib/liblapack.a -DBLAS_LIBRARIES=/path/to/lablaslib/libblas.a
 
 
 Building GPU capable ModEM with CMake
@@ -249,7 +248,7 @@ To build ModEM with GPU CUDA we can run the following command:
 .. code-block:: bash
 
     $ mkdir build; cd build
-    $ cmake -S .. -B . -DCMAKE_Fortran_COMPILER=mpifort -DBUILD_GPU=CUDA
+    $ cmake .. -DCMAKE_Fortran_COMPILER=mpifort -DBUILD_GPU=CUDA
 
 Again, you may need to specify LAPACK or BLAS libraries, see
 :ref:`findlapack_n_blas`. After building, you should see confirmation that the
@@ -306,14 +305,14 @@ You can specify your desired compute capability by specifying the
 
 .. code-block:: bash
 
-    $ cmake -S .. -B . -DCMAKE_Fortran_COMPILER=mpifort -DBUILD_GPU=CUDA -DCMAKE_CUDA_ARCHITECTURES="35;50;72"
+    $ cmake .. -DCMAKE_Fortran_COMPILER=mpifort -DBUILD_GPU=CUDA -DCMAKE_CUDA_ARCHITECTURES="35;50;72"
 
 This will generate code for Cuda architectures 35, 50 and 72. You can also tell
 CMake to use whatever capability your GPU can handle with the ``native`` keyword:
 
 .. code-block:: bash
 
-    $ cmake -S .. -B . -DCMAKE_Fortran_COMPILER=mpifort -DBUILD_GPU=CUDA -DCMAKE_CUDA_ARCHITECTURES="native"
+    $ cmake .. -DCMAKE_Fortran_COMPILER=mpifort -DBUILD_GPU=CUDA -DCMAKE_CUDA_ARCHITECTURES="native"
 
 You can also specify ``all`` or ``all-major``, which will generate code for all
 or all major version. For more information on avaliable options see:
