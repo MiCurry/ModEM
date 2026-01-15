@@ -16,6 +16,52 @@ set_target_properties(${MODEM_EXE} PROPERTIES
     Fortran_MODULE_DIRECTORY obj
 )
 
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(
+        ${MODEM_EXE}
+        PRIVATE
+        -cpp -ffree-line-length-none -fallow-argument-mismatch
+        $<$<CONFIG:RELEASE>:-O3>
+
+        $<$<CONFIG:DEBUG>:-O0>
+        $<$<CONFIG:DEBUG>:-g>
+        $<$<CONFIG:DEBUG>:-fp-stack-check>
+        $<$<CONFIG:DEBUG>:-fbacktrace>
+        $<$<CONFIG:DEBUG>:-fbounds-check>
+    )
+elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
+    find_package(MKL REQUIRED) # Or find_package(BLAS REQUIRED)
+
+    target_compile_options(
+        ${MODEM_EXE}
+        PRIVATE
+        $<$<CONFIG:RELEASE>:-O3>
+        $<$<CONFIG:RELEASE>:-w>
+
+        $<$<CONFIG:DEBUG>:-O0>
+        $<$<COMPILE_LANGUAGE:Fortran>:-ffp-stack-check>
+        $<$<COMPILE_LANGUAGE:Fortran>:-g>
+        $<$<COMPILE_LANGUAGE:Fortran>:-traceback>
+        $<$<COMPILE_LANGUAGE:Fortran>:-debug extend>
+        $<$<COMPILE_LANGUAGE:Fortran>:-check bounds>
+        $<$<COMPILE_LANGUAGE:Fortran>:-heap-array>
+    )
+    target_link_options(
+        ${MODEM_EXE}
+        PRIVATE
+        "-L${MKLROOT}/lib/intel64"
+        "-lmkl_intel_lp64"
+        "-lmkl_intel_thread"
+        "-lmkl_core"
+        "-lpthread"
+        "-qopenmp"
+        "-parallel"
+    )
+else()
+    message(FATAL_ERROR "Unknown/Unsupported Fortran Compiler: '${CMake_Fortran_COMPILER_ID}' - Supported compilers are < GNU | Ifort")
+endif()
+
+
 if (BUILD_MPI)
     add_subdirectory("MPI")
 endif()
