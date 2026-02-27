@@ -674,14 +674,11 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm, trial)
              comm_current = comm_leader
          end if
      end if
-
      if (present(trial)) then
          trial_lcl = trial
      else
          trial_lcl = .false.
      end if
-
-     call ModEM_log("Master_job_fwdPred - Start - Trial: $l", logicArgs=(/trial_lcl/))
 
      modem_ctx % comm_current = comm_current
 
@@ -699,7 +696,6 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm, trial)
      ! EMfieldInterp
      ! (obviously a quick patch, needs to be fixed in a major way)
      ! A.Kelbert 2018-01-28
-
      Call EdgeLength(grid, l_E)
      Call FaceArea(grid, S_F)
 
@@ -722,8 +718,6 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm, trial)
      end if
 
      ! clean up the grid elements stored in GridCalc on the master node
-     call deall_rvector(l_E)
-     call deall_rvector(S_F)
      write(ioMPI,*)'FWD: Finished calculating for (', nTx , ') Transmitters '
      endtime=MPI_Wtime()
      time_used = endtime-starttime
@@ -754,9 +748,6 @@ subroutine Master_job_DataResp(nTx, sigma, d, trial)
     else
         trial_lcl = .false.
     endif
-
-
-    call ModEM_log("Master_job_DataResp - Start")
 
     call create_worker_job_task_place_holder
 
@@ -1071,8 +1062,8 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm, use_starting_guess)
      ! Local
      type(modelParam_t)           :: dsigma_temp
      type(modelParam_t)           :: Qcomb
-     type(solnVectorMTX_t)        :: eAll_out 
-     type(solnVectorMTX_t)        :: eAll_temp
+     type(solnVectorMTX_t), pointer :: eAll_out 
+     type(solnVectorMTX_t), pointer :: eAll_temp
      type(dataVectorMTX_t)        :: d_temp
      
      logical        :: savedSolns,returne_m_vectors
@@ -1107,23 +1098,17 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm, use_starting_guess)
      end if
 
      modem_ctx % comm_current = comm_current
-
      ! nTX is number of transmitters;
      nTx = d%nTx
-     if(.not. eAll_temp%allocated) then
-         call EsMgr_create_eAll(eAll_temp, d % nTx, grid)
-     end if 
 
      if (.not. savedSolns )then
          d_temp=d
          call Master_job_fwdPred(sigma, d_temp, eAll_temp)
      else
-         eAll_temp=eAll 
+         call EsMgr_get_eAll_temp(eAll_temp, d % nTx, grid, eAll)
      end if
 
-     if(.not. eAll_out%allocated) then
-         call EsMgr_create_eAll(eAll_out, nTx, grid)
-     end if 
+     call EsMgr_get_eAll_out(eAll_out, nTx, grid)
 
      if (returne_m_vectors) then
          if (.not. associated(s_hat)) then
@@ -1135,6 +1120,7 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm, use_starting_guess)
          end do
      end if
 
+
      starttime = MPI_Wtime()
      ! First ditribute both model parameters and data
      call Master_job_Distribute_Model(sigma)
@@ -1142,11 +1128,13 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm, use_starting_guess)
 
      dsigma_temp = sigma
      dsigma      = sigma
+     Qcomb = sigma
      call zero(dsigma_temp)
      call zero(dsigma)
-     Qcomb = sigma
      call zero(Qcomb)
+
      job_name= 'JmultT'
+
      call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out,      &
     &     comm_current, eAll_temp, trial=use_starting_guess_lcl)
        
@@ -1155,12 +1143,15 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm, use_starting_guess)
      file_name='e.soln'
      !call write_solnVectorMTX(20,file_name,eAll_out)
 
+
      if (EsMgr_save_in_file) then
         call Master_job_PQMult(nTx, sigma, dsigma, use_starting_guess=use_starting_guess_lcl)
      else
          do iper=1,nTx
+
              call PmultT(eAll_temp%solns(iper),sigma,eAll_out%solns(iper)    &
         &         ,dsigma_temp)
+
              call QmultT(eAll_temp%solns(iper),sigma,d%d(iper),Qcomb)
              call scMultAdd(ONE,Qcomb,dsigma_temp)
 
@@ -1183,9 +1174,6 @@ Subroutine Master_job_JmultT(sigma,d,dsigma,eAll,s_hat,comm, use_starting_guess)
      ! clean up
      call deall_modelParam(dsigma_temp)
      call deall_modelParam(Qcomb)
-     call deall(eAll_out)
-     call deall(eAll_temp) 
-     ! call deall (e0)   
      call deall_dataVectorMTX(d_temp)
    
 end Subroutine Master_job_JmultT
@@ -1304,16 +1292,11 @@ subroutine Master_job_PQMult_old(nTx, sigma, dsigma)
     integer :: dest, nTasks, remainder, iTx
     integer :: iTx_min, iTx_max, i, j, k
 
-     call ModEM_log("Master_job_PQMult - Start")
-
     call create_worker_job_task_place_holder
     dsigma_recv = sigma
     nTasks = nTx / number_of_workers
     remainder = modulo(nTx, number_of_workers)
     iTx_max = 0
-
-    call ModEM_log("Masetr_job_PQMult - Remainder: $i nTasks: $i nTx: $i nWorkers: $i ", &
-        intArgs=(/remainder, nTasks, nTx, number_of_workers/))
 
     do dest = 1, number_of_workers
         iTx_min = iTx_max + 1
@@ -1323,9 +1306,6 @@ subroutine Master_job_PQMult_old(nTx, sigma, dsigma)
             iTx_max = iTx_max + 1
             remainder = remainder - 1
         end if
-
-        call ModEM_log("Masetr_job_PQMult - dest: $i - iTx_min: $i itx_max: $i - rem: $i nWorkers: $i ", &
-                intArgs=(/dest, iTx_min, iTx_max, remainder, number_of_workers/))
 
         if (iTx_max >= iTx_min) then
             worker_job_task % what_to_do=trim(job_name)
@@ -1373,8 +1353,6 @@ subroutine Master_job_LQMult(nTx, m, mHat, d)
     integer :: remainder
     integer :: iTx, iTx_min, iTx_max
     integer :: i, j, k
-
-     call ModEM_log("Master_job_LQMult - Start")
 
     call create_worker_job_task_place_holder
 
@@ -1587,8 +1565,6 @@ Subroutine Master_job_Distribute_Model(sigma,delSigma,comm)
      send_delSigma = present(delSigma)
 
      sigma_norm = sqrt(dotprod(sigma, sigma))
-     call ModEM_log('Distribute Model - Sigma Norm: $r', realArgs=(/sigma_norm/))
-     
 
      ! over-ride the default communicator, if needed
      if (present(comm)) then ! given communicator
@@ -1912,7 +1888,6 @@ subroutine Master_job_send_inv_iteration(iteration_num, comm)
     integer, intent(in), optional :: comm
     integer :: task, size_current, comm_current
 
-
     call ModEM_log("")
     call ModEM_log("New Iteration - $i!", intArgs=(/iteration_num/))
     call ModEM_log("")
@@ -1940,11 +1915,11 @@ subroutine Master_job_send_inv_iteration(iteration_num, comm)
         call MPI_SEND(worker_job_package, Nbytes, MPI_PACKED, task, FROM_MASTER, comm_current, ierr)
     end do
 
-    call ModEM_memory_log_report('new iteration')
 
     call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
-    call ModEM_memory_get_all("New Iteration Memory: ")
+    call ModEM_memory_log_report('New Iter (main):')
+    call ModEM_memory_get_all("New Iter (all):")
 
 
 end subroutine Master_job_send_inv_iteration
@@ -2011,7 +1986,6 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      worker_job_task%what_to_do=trim(job_name) 
      worker_job_task%trial = trial_lcl
 
-     call ModEM_log("Distribute task - worker_job_trial: $l", logicArgs=(/worker_job_task%trial/))
      call count_number_of_messages_to_RECV(eAll_out)
      total_jobs = answers_to_receive
      ! counter to locate the task 
@@ -2031,6 +2005,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      !     write(6,*)'robin = ', robin
      !    write(6,*)'total jobs = ', total_jobs
      ! endif
+
      do ijob=1,total_jobs !loop through all jobs
          ! loop through all jobs, until we run out of workers
          who=who+1
@@ -2073,6 +2048,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          end if
      end do
                    
+
 10   continue
 
      !answers_to_receive = nTx*nPol_MPI
@@ -2171,6 +2147,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          deallocate(e_para_vec)
      end if
      !call deall(e0)
+
 
 end subroutine Master_job_Distribute_Taskes
 
@@ -2344,10 +2321,6 @@ Subroutine Worker_job(sigma,d)
          previous_time = now
          now = MPI_Wtime()
          ! receive the job info from someone
-         write(0,*) "worker_job_package: ", ierr, comm_current, Nbytes
-
-         write(0,*) "My Status?: ", STATUS
-
          call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED ,0,     &
    &        FROM_MASTER,comm_current,STATUS, ierr)
          ! unpack message including what to do and other info. required 
@@ -2356,11 +2329,6 @@ Subroutine Worker_job(sigma,d)
          write(6,'(a12,a12,a30,a16,i5)') node_info,' MPI TASK [',         &
     &        trim(worker_job_task%what_to_do),'] received from ',        &
     &        STATUS(MPI_SOURCE)
-
-        call ModEM_log(" ", flush_log=.true.)
-        call ModEM_log("Starting: "//trim(worker_job_task % what_to_do))
-        call ModEM_memory_log_report(trim(worker_job_task % what_to_do))
-        call ModEM_log(" ", flush_log=.true.)
 
          ! for debug
          ! write(6,*) 'source = ', MPI_SOURCE
@@ -2462,7 +2430,6 @@ Subroutine Worker_job(sigma,d)
 
              call EsMgr_create_e(e, per_index)
 
-
              do per_index = start_iTx, end_iTx
                 call zero_solnvector(e0)
                 e0 % tx = per_index
@@ -2509,7 +2476,6 @@ Subroutine Worker_job(sigma,d)
              per_index = worker_job_task % per_index
              worker_job_task % taskid = taskid
              trial=worker_job_task%trial
-
 
              call create_solnVector(grid, 1, e0)
              call create_solnVector(grid, 1, e)
@@ -3193,11 +3159,11 @@ Subroutine Worker_job(sigma,d)
             call ModEM_log("")
             call ModEM_log("Iteration Number: $i", intArgs=(/iteration_number/))
             call ModEM_log("")
-            call ModEM_memory_log_report('Memory - New Iteration')
+            call ModEM_memory_log_report('New Iter(Main)')
+            call ModEM_memory_get_all("New Iter (all): ")
 
             call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
-            call ModEM_memory_get_all("New Iteration Memory: ")
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'STOP' ) then
              ! clear all the temp packages and stop

@@ -18,6 +18,8 @@ implicit none
 public          :: printf, func, gradient
 public          :: CdInvMult, CmSqrtMult
 
+type(dataVectorMTX_t) :: res
+logical :: res_allocated  = .false.
 
 Contains
 
@@ -79,7 +81,7 @@ Contains
    logical, optional, intent(in) :: trial
 
    !  local variables
-   type(dataVectorMTX_t)    :: res,Nres
+   type(dataVectorMTX_t)    :: Nres
    type(modelParam_t) :: m,JTd
    real(kind=prec) :: SS
    integer :: Ndata, Nmodel
@@ -113,6 +115,11 @@ Contains
 !			nSites,sites,allData)
 
    ! initialize res
+   if (res_allocated) then
+       call create_dataVectorMTX(eAll % nTx, res)
+       res_allocated = .true. 
+   end if
+
    res = d
 
    ! compute residual: res = d-dHat
