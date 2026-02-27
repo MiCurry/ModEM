@@ -594,6 +594,57 @@ contains
 
    end subroutine copy_solnVectorMTX
 
+   subroutine fast_copy_solnVectorMTX(eIn, eOut)
+
+       implicit none
+
+       type (solnVectorMTX_t), intent(in)	:: eIn
+       type (solnVectorMTX_t), intent(inout)	:: eOut
+
+       integer :: iTx
+       integer :: iPol
+
+       if (.not. eOut % allocated) then
+           call errStop("eOut was not allocated! Please allocated it.")
+        end if
+
+        if (.not. eIn % allocated) then
+           call errStop("eIn was not allocated! Please allocated it.")
+        end if
+
+        eOut % nTx = eIn % nTx
+
+        ! Copy each of the soln Vectors
+        do iTx = 1, eIn % nTx, 1
+            eOut % solns(iTx) % nPol = eIn % solns(iTx) % nPol
+            eOut % solns(iTx) % tx = eIn % solns(iTx) % tx
+            eOut % solns(iTx) % grid => eIn % solns(ITx) % grid
+
+            do iPol = 1, eIn % solns(iTx) % nPol
+                eOut % solns(iTx) % Pol_index(iPol) = eIn % solns(iTx) % Pol_index(iPol)
+                eOut % solns(iTx) % Pol_name(iPol) = eIn % solns(iTx) % Pol_name(iPol)
+
+                eOut % solns(iTx) % pol(iPol) % gridType = eIn % solns(iTx) % pol(iPol) % gridType
+
+                eOut % solns(iTx) % pol(iPol) % nx = eIn % solns(iTx) % pol(iPol) % nx
+                eOut % solns(iTx) % pol(iPol) % ny = eIn % solns(iTx) % pol(iPol) % ny
+                eOut % solns(iTx) % pol(iPol) % nz = eIn % solns(iTx) % pol(iPol) % nz
+
+                if (.not. eIn % solns(iTx) %  place_holder) then
+                    eOut % solns(iTx) % pol(iPol) % x = eIn % solns(iTx) % pol(iPol) % x
+                    eOut % solns(iTx) % pol(iPol) % y = eIn % solns(iTx) % pol(iPol) % y
+                    eOut % solns(iTx) % pol(iPol) % z = eIn % solns(iTx) % pol(iPol) % z
+
+                else
+                    eOut % solns(iTx) % place_holder = eIn % solns(iTx) % place_holder
+                end if
+
+                eOut % solns(iTx) % pol(iPol) % grid => eIn % solns(iTx) % pol(iPol) % grid
+            end do
+        end do 
+
+   end subroutine fast_copy_solnVectorMTX
+
    ! **********************************************************************
    ! * Creates a random perturbation in the EM soln - used for testing
    subroutine random_solnVectorMTX(eAll,eps)

@@ -10,7 +10,6 @@ module ESolnManager
 
     private
 
-    type (solnVectorMTX_t) :: EsMgr_eAll
     type (ModEM_mpi_context_t), pointer :: EsMgr_ctx
 
     character(len=*), parameter :: FTYPE_ASCII = "ascii"
@@ -22,10 +21,29 @@ module ESolnManager
     character(len=25) :: EsMgr_ftype
     character(len=256) :: EsMgr_prefix
     logical :: EsMgr_save_in_file
+    
+    character, pointer, dimension(:) :: esmgr_holder => null()
+    integer :: esmgr_bytes
+    logical :: esmgr_holder_allocated
+
+
+    type (solnVectorMTX_t), pointer :: EsMgr_eAll_out => null()
+    logical :: EsMgr_eAll_out_allocated
+
+    type (solnVectorMTX_t), pointer :: EsMgr_eAll_temp => null()
+    logical :: EsMgr_eAll_temp_allocated
+
+    type (solnVectorMTX_t), pointer :: EsMgr_eAll => null()
+    logical :: EsMgr_eAll_allocated
+
+    logical :: epacked_allocated
 
     public :: FTYPE_ASCII, FTYPE_BINARY, FTYPE_NETCDF, FTYPE_HDF5
     public :: EsMgr_init
     public :: EsMgr_create_eAll, EsMgr_create_e 
+    public :: EsMgr_get_eAll
+    public :: EsMgr_get_eAll_out
+    public :: EsMgr_get_eAll_temp
     public :: EsMgr_get
     public :: EsMgr_save
     public :: EsMgr_save_in_file, EsMgr_write_to_file, read_esoln_from_file
@@ -50,6 +68,10 @@ contains
         character(len=256) :: ftype_lcl
 
         EsMgr_ctx => context
+        EsMgr_eAll_out_allocated = .false.
+        EsMgr_eAll_temp_allocated = .false.
+        esmgr_bytes = 0
+        esmgr_holder_allocated = .false.
 
         if (present(save_in_file)) then
             save_in_file_lcl = save_in_file
@@ -162,6 +184,75 @@ contains
         end do
 
     end subroutine EsMgr_create_eAll
+
+    subroutine EsMgr_get_eAll(eAll, nTx, grid, place_holder)
+
+        implicit none
+
+        type (solnVectorMTX_t), intent(out), pointer :: eAll
+        integer, intent(in) :: nTx
+        type(grid_t), intent(in), target :: grid
+        logical, intent(in), optional :: place_holder
+
+        if (EsMgr_eAll_allocated) then
+            eAll => EsMgr_eAll
+            return
+        end if
+
+        allocate(EsMgr_eAll)
+        call EsMgr_create_eAll(EsMgr_eAll, nTx, grid, place_holder)
+
+        eAll => EsMgr_eAll
+        EsMgr_eAll_allocated = .true.
+
+    end subroutine EsMgr_get_eAll
+
+    subroutine EsMgr_get_eAll_out(eAll, nTx, grid, place_holder)
+
+        implicit none
+
+        type (solnVectorMTX_t), intent(out), pointer :: eAll
+        integer, intent(in) :: nTx
+        type(grid_t), intent(in), target :: grid
+        logical, intent(in), optional :: place_holder
+
+        if (EsMgr_eAll_out_allocated) then
+            eAll => EsMgr_eAll_out
+            return
+        end if
+
+        allocate(EsMgr_eAll_out)
+        call EsMgr_create_eAll(EsMgr_eAll_out, nTx, grid, place_holder)
+
+        eAll => EsMgr_eAll_out
+        EsMgr_eAll_out_allocated = .true.
+
+    end subroutine EsMgr_get_eAll_out
+
+    subroutine EsMgr_get_eAll_temp(eAll, nTx, grid, eAll_copy, place_holder)
+
+        implicit none
+
+        type (solnVectorMTX_t), intent(out), pointer :: eAll
+        integer, intent(in) :: nTx
+        type(grid_t), intent(in), target :: grid
+        type (solnVectorMTX_t), intent(in) :: eAll_copy
+        logical, intent(in), optional :: place_holder
+
+        if (EsMgr_eAll_temp_allocated) then
+            eAll => EsMgr_eAll_temp
+            call fast_copy_solnVectorMTX(eAll_copy, EsMgr_eAll_temp)
+            return
+        end if
+
+        allocate(EsMgr_eAll_temp)
+        call EsMgr_create_eAll(EsMgr_eAll_temp, nTx, grid, place_holder)
+        call fast_copy_solnVectorMTX(eAll_copy, EsMgr_eAll_temp)
+
+        eAll => EsMgr_eAll_temp
+        EsMgr_eAll_temp_allocated = .true.
+
+    end subroutine EsMgr_get_eAll_temp
 
     subroutine EsMgr_get(e, iTx, pol_index, from, prefix)
 
@@ -316,7 +407,6 @@ contains
         type (solnVector_t), intent(inout) :: e
         integer, intent(in) :: to
         integer :: tag
-        character, pointer, dimension(:) :: e_packed => null()
 
         if (to == 0) then
             tag = FROM_WORKER
@@ -324,10 +414,10 @@ contains
             tag = FROM_MASTER
         end if
 
-        call int_create_e_param_place_holder(e, e_packed) 
-        call int_Pack_packed_vec(e, e_packed)
-        call MPI_Send(e_packed, Nbytes, MPI_PACKED, to, tag, EsMgr_ctx % comm_current, ierr) 
-        deallocate(e_packed)
+        call int_create_e_param_place_holder(e) 
+        call int_Pack_packed_vec(e)
+        call MPI_Send(esmgr_holder, esmgr_bytes, MPI_PACKED, to, tag, EsMgr_ctx % comm_current, ierr) 
+        !deallocate(e_packed)
 
     end subroutine EsMgr_send_e
 
@@ -338,7 +428,6 @@ contains
         type (solnVector_t), intent(inout) :: e
         integer, intent(in) :: from
         integer :: tag
-        character, pointer, dimension(:) :: e_packed => null()
 
         if (from == 0) then
             tag = FROM_MASTER
@@ -346,19 +435,22 @@ contains
             tag = FROM_WORKER
         end if
 
-        call int_create_e_param_place_holder(e, e_packed)
-        call MPI_Recv(e_packed, Nbytes, MPI_PACKED, from, tag, EsMgr_ctx % comm_current, STATUS, ierr)
-        call int_Unpack_packed_vec(e, e_packed)
-        deallocate(e_packed)
+        call int_create_e_param_place_holder(e)
+        call MPI_Recv(esmgr_holder, esmgr_bytes, MPI_PACKED, from, tag, EsMgr_ctx % comm_current, STATUS, ierr)
+        call int_Unpack_packed_vec(e)
+        !deallocate(e_packed)
 
     end subroutine EsMgr_recv_e
 
-    subroutine int_create_e_param_place_holder(e, holder)
+    subroutine int_create_e_param_place_holder(e)
 
          implicit none
          type(solnVector_t), intent(in)	:: e
-         character, pointer, dimension(:), intent(inout) :: holder 
          integer                        :: Ex_size,Ey_size,Ez_size,Nbytes1,Nbytes2,Nbytes3,Nbytes4
+
+         if (esmgr_holder_allocated) then
+             return
+         end if
 
          Ex_size=size(e%pol(1)%x)
          CALL MPI_PACK_SIZE(Ex_size, MPI_DOUBLE_COMPLEX, MPI_COMM_WORLD, Nbytes1,  ierr)
@@ -367,21 +459,18 @@ contains
          Ez_size=size(e%pol(1)%z)
          CALL MPI_PACK_SIZE(Ez_size, MPI_DOUBLE_COMPLEX, MPI_COMM_WORLD, Nbytes3,  ierr)
          CALL MPI_PACK_SIZE(1, MPI_INTEGER, MPI_COMM_WORLD, Nbytes4,  ierr)
-         Nbytes=((Nbytes1+Nbytes2+Nbytes3+Nbytes4))+1
+         esmgr_bytes=((Nbytes1+Nbytes2+Nbytes3+Nbytes4))+1
 
-         if(associated(holder)) then
-            deallocate(holder)
-         end if
-         allocate(holder(Nbytes))       
+         allocate(esmgr_holder(esmgr_bytes))       
+         esmgr_holder_allocated = .true.
 
      end subroutine int_create_e_param_place_holder
 
-     subroutine int_pack_packed_vec(e, unpacked_vec)
+     subroutine int_pack_packed_vec(e)
 
         implicit none
 
         type(solnVector_t), intent(in)	:: e
-        character, pointer, dimension(:), intent(inout) :: unpacked_vec
         integer index,Ex_size,Ey_size,Ez_size
 
         Ex_size=size(e%pol(1)%x)
@@ -389,20 +478,19 @@ contains
         Ez_size=size(e%pol(1)%z)
         index=1
 
-        call MPI_Pack(e%pol(which_pol)%x(1,1,1),Ex_size, MPI_DOUBLE_COMPLEX, unpacked_vec, Nbytes, index, MPI_COMM_WORLD, ierr)
-        call MPI_Pack(e%pol(which_pol)%y(1,1,1),Ey_size, MPI_DOUBLE_COMPLEX, unpacked_vec, Nbytes, index, MPI_COMM_WORLD, ierr)
-        call MPI_Pack(e%pol(which_pol)%z(1,1,1),Ez_size, MPI_DOUBLE_COMPLEX, unpacked_vec, Nbytes, index, MPI_COMM_WORLD, ierr)
-        call MPI_Pack(e%tx, 1, MPI_INTEGER, unpacked_vec, Nbytes, index, MPI_COMM_WORLD, ierr)
+        call MPI_Pack(e%pol(which_pol)%x(1,1,1),Ex_size, MPI_DOUBLE_COMPLEX, esmgr_holder, esmgr_bytes, index, MPI_COMM_WORLD, ierr)
+        call MPI_Pack(e%pol(which_pol)%y(1,1,1),Ey_size, MPI_DOUBLE_COMPLEX, esmgr_holder, esmgr_bytes, index, MPI_COMM_WORLD, ierr)
+        call MPI_Pack(e%pol(which_pol)%z(1,1,1),Ez_size, MPI_DOUBLE_COMPLEX, esmgr_holder, esmgr_bytes, index, MPI_COMM_WORLD, ierr)
+        call MPI_Pack(e%tx, 1, MPI_INTEGER, esmgr_holder, esmgr_bytes, index, MPI_COMM_WORLD, ierr)
 
     end subroutine int_pack_packed_vec
 
 
-    subroutine int_unpack_packed_vec(e, packed_vec)
+    subroutine int_unpack_packed_vec(e)
 
         implicit none
 
         type(solnVector_t), intent(inout)	:: e
-        character, pointer, dimension(:), intent(inout) :: packed_vec
 
         integer index,Ex_size,Ey_size,Ez_size
 
@@ -411,10 +499,10 @@ contains
         Ez_size=size(e%pol(1)%z)
         index=1
 
-        call MPI_Unpack(packed_vec, Nbytes, index, e%pol(which_pol)%x(1,1,1),Ex_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
-        call MPI_Unpack(packed_vec, Nbytes, index, e%pol(which_pol)%y(1,1,1),Ey_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
-        call MPI_Unpack(packed_vec, Nbytes, index, e%pol(which_pol)%z(1,1,1),Ez_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
-        call MPI_Unpack(packed_vec, Nbytes, index, e%tx,1, MPI_INTEGER,MPI_COMM_WORLD, ierr)
+        call MPI_Unpack(esmgr_holder, esmgr_bytes, index, e%pol(which_pol)%x(1,1,1),Ex_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
+        call MPI_Unpack(esmgr_holder, esmgr_bytes, index, e%pol(which_pol)%y(1,1,1),Ey_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
+        call MPI_Unpack(esmgr_holder, esmgr_bytes, index, e%pol(which_pol)%z(1,1,1),Ez_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
+        call MPI_Unpack(esmgr_holder, esmgr_bytes, index, e%tx,1, MPI_INTEGER,MPI_COMM_WORLD, ierr)
 
     end subroutine int_unpack_packed_vec
     

@@ -52,6 +52,7 @@ public  :: NLCGsolver
   end type NLCGiterControl_t
 
   type(NLCGiterControl_t), private, save :: iterControl
+  type(solnVectorMTX_t)                         :: eAll_1
 
 Contains
 
@@ -570,7 +571,6 @@ Contains
    real(kind=prec)                 :: g_0,f_0,f_1,f_i,rms_1,mNorm_1
    type(modelParam_t)                        :: mHat_0,mHat_1
    type(dataVectorMTX_t)                           :: dHat_1
-   type(solnVectorMTX_t)                         :: eAll_1
    character(100)							:: logFile
 
    ! parameters
@@ -763,7 +763,6 @@ Contains
    real(kind=prec)                 :: g_0,f_0,f_1,f_i,f_j,rms_1,mNorm_1
    type(modelParam_t)                        :: mHat_0,mHat_1
    type(dataVectorMTX_t)                           :: dHat_1
-   type(solnVectorMTX_t)                         :: eAll_1
    character(100)							:: logFile
 
    ! parameters
@@ -833,8 +832,6 @@ Contains
         call deall_dataVectorMTX(dHat_1)
         call deall_modelParam(mHat_0)
         call deall_modelParam(mHat_1)
-        call deall_solnVectorMTX(eAll_1)
-        call deall_solnVectorMTX(eAll)
         return
    end if
 
@@ -957,7 +954,6 @@ Contains
    call deall_dataVectorMTX(dHat_1)
    call deall_modelParam(mHat_0)
    call deall_modelParam(mHat_1)
-   call deall_solnVectorMTX(eAll_1)
 
   end subroutine lineSearchCubic
 

@@ -13,8 +13,8 @@ program Mod3DMT
      use DCG
      use LBFGS
      use utilities
+     use ModEM_logger
      use ModEM_memory
-     use ModEM_logger 
      !use mtinvsetup
 
 #ifdef MPI
