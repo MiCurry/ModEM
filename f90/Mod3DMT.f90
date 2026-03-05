@@ -13,6 +13,7 @@ program Mod3DMT
      use DCG
      use LBFGS
      use utilities
+     use ModEM_logger
      !use mtinvsetup
 
 #ifdef MPI
@@ -62,6 +63,7 @@ program Mod3DMT
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations
 #ifdef MPI
+      call ModEM_log_init()
       call setGrid_MPI(grid)
     ! Check if a large grid file with E field is defined:
     ! NOTE: right now both grids share the same transmitters.

@@ -346,6 +346,7 @@ Contains
       end if
 
       iter = iter + 1
+      call Master_job_send_inv_iteration(iter)
 
 	  ! save the values of the functional and the directional derivative
 	  rmsPrev = rms
