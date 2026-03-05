@@ -20,6 +20,8 @@ module Main_MPI
   use Sub_MPI
 
   use EsolnManager
+  use ModEM_logger
+  use ModEM_memory
   ! use ioascii
 
   implicit none
@@ -1950,6 +1952,48 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
 
 end subroutine Master_job_Distribute_Taskes
 
+subroutine Master_job_send_inv_iteration(iteration_num, comm)
+
+    implicit none
+
+    integer, intent(in) :: iteration_num
+    integer, intent(in), optional :: comm
+    integer :: task, size_current, comm_current
+
+    call ModEM_log("")
+    call ModEM_log("New Iteration - $i!", intArgs=(/iteration_num/))
+    call ModEM_log("")
+
+    if (present(comm)) then
+         if (comm .eq. MPI_COMM_NULL) then
+             comm_current = comm_world
+         else
+             comm_current = comm
+         endif
+     else
+         comm_current = comm_world
+     end if
+     call MPI_COMM_SIZE( comm_current, size_current, ierr )
+
+    worker_job_task % what_to_do = 'ITER_NUM'
+    worker_job_task % per_index = -1
+    worker_job_task % pol_index = -1
+    call create_worker_job_task_place_holder
+    call Pack_worker_job_task
+
+    do task = 1, size_current - 1
+        call MPI_SEND(worker_job_package, Nbytes, MPI_PACKED, task, FROM_MASTER, comm_current, ierr)
+    end do
+
+
+    call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+
+    call ModEM_memory_log_report('New Iter (main):')
+    call ModEM_memory_get_all("New Iter (all):")
+
+end subroutine Master_job_send_inv_iteration
+
+
 !##################   find next job -- from back or front   ##################
     Subroutine find_next_job(nTx,total_jobs,counter,fromhead, eAll_out, &
      &    per_index,pol_index)
@@ -2049,6 +2093,7 @@ Subroutine Worker_job(sigma,d)
  
      ! 2019.05.08, Liu Zhongyin, add isite for rx in dataBlock_t
      integer                       :: isite
+     integer                       :: iteration_number
 
      ! PQMult
      type (modelParam_t) :: dsigma_temp, dsigma_send, Qcomb
@@ -2764,6 +2809,19 @@ Subroutine Worker_job(sigma,d)
              call Pack_worker_job_task
              call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
     &             FROM_WORKER, comm_current, ierr)
+
+         elseif (trim(worker_job_task%what_to_do) .eq. 'ITER_NUM' ) then
+
+            iteration_number = iteration_number + 1
+            call ModEM_log("")
+            call ModEM_log("Iteration Number: $i", intArgs=(/iteration_number/))
+            call ModEM_log("")
+
+            call ModEM_memory_log_report('New Iter (me)')
+            call ModEM_memory_get_all("New Iter (all): ")
+
+            call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+
          elseif (trim(worker_job_task%what_to_do) .eq. 'REGROUP') then
              ! calculate the time between two regroup events
              if ((size_local.gt.1).and.(para_method.gt.0).and.          &

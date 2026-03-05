@@ -13,6 +13,7 @@ program Mod3DMT
      use DCG
      use LBFGS
      use utilities
+     use ModEM_logger
      !use mtinvsetup
 
 #ifdef MPI
@@ -63,6 +64,8 @@ program Mod3DMT
       ! set the grid for the numerical computations
 #ifdef MPI
     call setGrid_MPI(grid)
+
+    call ModEM_log_init(.true.)
 
     call EsMgr_init(grid, context=modem_ctx, &
                           save_in_file=cUserDef % storeSolnsInFile, &
