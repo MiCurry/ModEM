@@ -65,7 +65,7 @@ program Mod3DMT
 #ifdef MPI
     call setGrid_MPI(grid)
 
-    call ModEM_log_init(.true.)
+    call ModEM_log_init(.false.)
 
     call EsMgr_init(grid, context=modem_ctx, &
                           save_in_file=cUserDef % storeSolnsInFile, &

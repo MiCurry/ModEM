@@ -114,13 +114,14 @@ contains
 
     end subroutine ModEM_memory_log_report
 
-    subroutine ModEM_memory_get_all(message)
+    subroutine ModEM_memory_get_all(message, comm)
 
         implicit none
 
         character (len=*), intent(in) :: message
         character (len=*), parameter :: LOG_MSG_FMT = "(A, A, F18.1, A, F18.1, A, F18.1, A)"
         character (len=512) :: log_message
+        integer :: comm
 
 
         integer :: maxrss, global_maxrss
@@ -128,7 +129,7 @@ contains
 
         call ModEM_memory_get_maxrss(maxrss)
 
-        call MPI_reduce(maxrss, global_maxrss, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+        call MPI_reduce(maxrss, global_maxrss, 1, MPI_INTEGER, MPI_SUM, 0, comm, ierr)
 
         if (taskid == 0) then
             call ModEM_memory_convert_maxrss(global_maxrss, maxrss_kb, maxrss_mb, maxrss_gb)

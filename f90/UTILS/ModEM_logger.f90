@@ -139,7 +139,6 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
 
 
    if ((mainOnly_lcl .and. taskid == 0) .or. (.true.)) then
-       write(0,*) fid_lcl
        write(fid_lcl,*) trim(messageExpanded)
 
        if (.true.) then

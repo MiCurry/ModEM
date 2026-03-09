@@ -21,6 +21,7 @@ module Main_MPI
 
   use EsolnManager
   use ModEM_logger
+  use ModEM_memory
   ! use ioascii
 
   implicit none
@@ -744,7 +745,7 @@ subroutine Master_job_DataResp(nTx, sigma, d, trial, comm)
     remainder = modulo(nTx, size_leader)
     iTx_max = 0
 
-    do dest = 1, size_leader
+    do dest = 1, size_leader - 1
         iTx_min = iTx_max + 1
         iTx_max = iTx_min + nTasks - 1
 
@@ -768,7 +769,7 @@ subroutine Master_job_DataResp(nTx, sigma, d, trial, comm)
     remainder = modulo(nTx, size_leader)
     iTx_max = 0
 
-    do dest = 1, size_leader
+    do dest = 1, size_leader - 1
         iTx_min = iTx_max + 1
         iTx_max = iTx_min + nTasks - 1
 
@@ -1222,7 +1223,7 @@ subroutine Master_job_PQMult(nTx, sigma, dsigma, use_starting_guess)
                 cycle
             end if
 
-            do dest = 1, size_leader
+            do dest = 1, size_leader - 1
                 if (task_is_working(dest)) then
                     cycle
                 end if
@@ -1997,15 +1998,14 @@ subroutine Master_job_send_inv_iteration(iteration_num)
     call create_worker_job_task_place_holder
     call Pack_worker_job_task
 
-    do task = 1, size_current - 1
+    do task = 1, size_leader - 1
         call MPI_SEND(worker_job_package, Nbytes, MPI_PACKED, task, FROM_MASTER, comm_current, ierr)
     end do
 
-
-    call MPI_BARRIER(comm_current, ierr)
+    call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
     call ModEM_memory_log_report('New Iter (main):')
-    call ModEM_memory_get_all("New Iter (all):", comm_current)
+    call ModEM_memory_get_all("New Iter (all):", MPI_COMM_WORLD)
 
 end subroutine Master_job_send_inv_iteration
 
@@ -2172,6 +2172,8 @@ Subroutine Worker_job(sigma,d)
          write(6,'(a12,a12,a30,a16,i5)') node_info,' MPI TASK [',         &
     &        trim(worker_job_task%what_to_do),'] received from ',        &
     &        STATUS(MPI_SOURCE)
+
+        call ModEM_log("New Job: "//trim(worker_job_task % what_to_do))
 
          modem_ctx % comm_current = comm_current
          modem_ctx % rank_current = rank_current
@@ -2835,10 +2837,20 @@ Subroutine Worker_job(sigma,d)
             call ModEM_log("Iteration Number: $i", intArgs=(/iteration_number/))
             call ModEM_log("")
 
-            call ModEM_memory_log_report('New Iter (me)')
-            call ModEM_memory_get_all("New Iter (all): ", comm_current)
+            if ((size_local.gt.1).and.(para_method.gt.0).and.          &
+    &            (rank_local.eq.0)) then 
+                 ! group leader passing the command to workers
+                 do des_index=1, size_local-1
+                     call MPI_SEND(worker_job_package,Nbytes,           &
+    &                    MPI_PACKED, des_index,  FROM_MASTER, comm_local, &
+    &                    ierr)
+                 end do
+             end if
 
-            call MPI_BARRIER(comm_current, ierr)
+            call ModEM_memory_log_report('New Iter (me)')
+            call ModEM_memory_get_all("New Iter (all): ", MPI_COMM_WORLD)
+
+            call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'REGROUP') then
              ! calculate the time between two regroup events
