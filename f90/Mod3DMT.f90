@@ -14,6 +14,7 @@ program Mod3DMT
      use LBFGS
      use utilities
      use ModEM_logger
+     use ModEM_memory
      !use mtinvsetup
 
 #ifdef MPI
@@ -34,6 +35,7 @@ program Mod3DMT
 
 #ifdef MPI
       call  constructor_MPI
+      call ModEM_log_init(.false.)
 #endif
 
 #ifdef MPI
@@ -57,15 +59,16 @@ program Mod3DMT
           call RECV_cUserDef(cUserDef)
       end if
 #else
+     call ModEM_memory_log_report("Before parse args")
       call parseArgs('Mod3DMT',cUserDef) ! OR readStartup(rFile_Startup,cUserDef)
       write(6,*)'I am a SERIAL version'
+     call ModEM_memory_log_report("after parse args")
 #endif
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations
 #ifdef MPI
     call setGrid_MPI(grid)
 
-    call ModEM_log_init(.false.)
 
     call EsMgr_init(grid, context=modem_ctx, &
                           save_in_file=cUserDef % storeSolnsInFile, &

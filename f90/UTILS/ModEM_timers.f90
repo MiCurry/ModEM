@@ -11,6 +11,7 @@ module ModEM_timers
 !
     use iso_fortran_env, only : int64
     use iso_c_binding, only : c_int
+    use ModEM_logger
 
     implicit none
 
@@ -53,6 +54,7 @@ module ModEM_timers
     public ModEM_timers_start, ModEM_timers_stop, ModEM_timers_stop_all
     public ModEM_timers_exist, ModEM_timers_get
     public ModEM_timers_print, ModEM_timers_print_all, ModEM_timers_report
+    public ModEM_timers_log
 
     ! The following will not be public in ModEM (only public for unit testing)
     public accumulate_time, convert_time
@@ -355,10 +357,24 @@ module ModEM_timers
         secs = timer % secs
         nsecs = timer % nsecs
 
+        write(0,*) "Timer is writing out to ", file_descriptor, trim(timer % name), trim(timer_name)
+
         write(file_descriptor, ModEM_timer_str_format) "Timer: '", trim(timer % name), "'", achar(9) // achar(9), " Elapsed Time: ", &
             hours, ":", mins, ":", secs, ":", nsecs
 
     end subroutine ModEM_timers_print
+
+    subroutine ModEM_timers_log(timer_name)
+
+        character (len=*), intent(in) :: timer_name
+
+        integer :: lfid
+
+        lfid = ModEM_log_get_log_fid()
+
+        call ModEM_timers_print(timer_name, file=lfid)
+
+    end subroutine ModEM_timers_log
 
     subroutine ModEM_timers_print_all(file)
 

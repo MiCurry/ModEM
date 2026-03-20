@@ -10,6 +10,16 @@ implicit none
 
 contains
 
+function ModEM_log_get_log_fid() result (lfid)
+
+    implicit none
+
+    integer :: lfid
+
+    lfid = log_fid
+
+end function ModEM_log_get_log_fid
+
 subroutine ModEM_log_init(mainOnly)
 
       implicit none

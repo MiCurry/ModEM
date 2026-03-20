@@ -11,6 +11,9 @@ module DataIO
   use transmitters
   use receivers
   use datatypes
+  use ModEM_logger
+  use ModEM_timers
+  use ModEM_memory
 
   implicit none
 
@@ -588,7 +591,16 @@ Contains
     character(40)              	    :: Txid=''
     real(8) 			    :: Moment, Azi, Dip, LatTx, LongTx, Tx(3)
     real(8)                         :: Omega, Amplitude
+    integer :: inner_loop_iter, outer_loop_iter, nbackspaces, total_iters
     type(transmitter_t)             :: aTx
+
+
+    inner_loop_iter = 0
+    outer_loop_iter = 0
+    nbackspaces = 0 
+    total_iters = 0
+    call ModEM_timers_create('read_z', .true.)
+    call ModEM_memory_log_report("read_z_list - start")
 
     ! First, set up the data type dictionary, if it's not in existence yet
     call setup_typeDict()
@@ -608,7 +620,9 @@ Contains
       
     ! Read the data blocks for each data type
     READ_DATA_TYPE: do
-      
+
+        inner_loop_iter = inner_loop_iter + 1
+
     	read(ioDat,'(a2,a200)',iostat=ios) temp,typeInfo
     	read(ioDat,'(a2,a200)',iostat=ios) temp,typeHeader
     	read(ioDat,'(a2,a100)',iostat=ios) temp,typeName
@@ -658,7 +672,8 @@ Contains
         !write(0,'(a6,i5,a18,i8,a24)') 'Found ',nTx,' transmitters and ',nRx,' receivers in data block'
 
 
-        if (output_level > 3) then
+        if (.false.) then
+            call ModEM_memory_log('read_z_list - another one!')
             write(0,*) node_info,'Reading data type: ',trim(typeName)
             write(0,*) node_info,'Sign convention in file: ',trim(fileInfo(iTxt,iDt)%sign_info_in_file)
             write(0,*) node_info,'Units in file: ',trim(fileInfo(iTxt,iDt)%units_in_file)
@@ -696,6 +711,8 @@ Contains
         HyAzimuth_ref(:,:) = R_ZERO
 
         READ_DATA_LINE: Do
+
+            outer_loop_iter = outer_loop_iter + 1
 
             select case (iDt)
             case(Ex_Field,Ey_Field,Bx_Field,By_Field,Bz_Field)
@@ -826,6 +843,7 @@ Contains
 
                 ! Liu Zhongyin, 2019.08.27, add new codes for reading data
                 backspace(ioDat)
+                nbackspaces = nbackspaces + 1
                 call strcount(tmpline, ' ', ncount)
                 select case (ncount)
                 case(11)
@@ -895,6 +913,7 @@ Contains
                     x(1) = lat
                     x(2) = lon
                 end if
+                write(0,*) 'nbackspaces', nbackspaces
                 iRx = update_rxDict(x,siteid)
 
             case(Full_Interstation_TF)
@@ -906,11 +925,12 @@ Contains
                 end if
 
                 ! Liu Zhongyin, 2019.08.27, add new codes for reading data
-                backspace(ioDat)
+                !backspace(ioDat)
                 call strcount(tmpline, ' ', ncount)
+                write(0,*) "Ncount: ", ncount
                 select case (ncount)
                 case(17)
-                    read(ioDat,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
+                    read(tmpline,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
                         ref_code,ref_lat,ref_lon,ref_x(1),ref_x(2),ref_x(3),compid,Zreal,Zimag,Zerr
                     Hxangle = fileInfo(iTxt,iDt)%geographic_orientation
                     Exangle = 0.0
@@ -919,7 +939,7 @@ Contains
                     Eyangle = Exangle + 90.0
                     Hyangle_ref = Hxangle_ref + 90.0
                 case(18)
-                    read(ioDat,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
+                    read(tmpline,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
                         ref_code,ref_lat,ref_lon,ref_x(1),ref_x(2),ref_x(3),compid,Zreal,Zimag,Zerr,Hxangle
                     Hxangle = Hxangle + fileInfo(iTxt,iDt)%geographic_orientation
                     Exangle = 0.0
@@ -928,7 +948,7 @@ Contains
                     Eyangle = Exangle + 90.0
                     Hyangle_ref = Hxangle_ref + 90.0
                 case(19)
-                    read(ioDat,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
+                    read(tmpline,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
                         ref_code,ref_lat,ref_lon,ref_x(1),ref_x(2),ref_x(3),compid,Zreal,Zimag,Zerr,Hxangle,Hxangle_ref
                     Hxangle = Hxangle + fileInfo(iTxt,iDt)%geographic_orientation
                     Exangle = 0.0
@@ -937,7 +957,7 @@ Contains
                     Eyangle = Exangle + 90.0
                     Hyangle_ref = Hxangle_ref + 90.0
                 case(20)
-                    read(ioDat,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
+                    read(tmpline,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
                         ref_code,ref_lat,ref_lon,ref_x(1),ref_x(2),ref_x(3),compid,Zreal,Zimag,Zerr,Hxangle,Hyangle,Hxangle_ref
                     Hxangle = Hxangle + fileInfo(iTxt,iDt)%geographic_orientation
                     Exangle = 0.0
@@ -946,7 +966,7 @@ Contains
                     Eyangle = Exangle + 90.0
                     Hyangle_ref = Hxangle_ref + 90.0
                 case(21)
-                    read(ioDat,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
+                    read(tmpline,*,iostat=ios) Period,code,lat,lon,x(1),x(2),x(3), &
                         ref_code,ref_lat,ref_lon,ref_x(1),ref_x(2),ref_x(3),compid,Zreal,Zimag,Zerr,Hxangle,Hyangle,Hxangle_ref,Hyangle_ref
                     Hxangle = Hxangle + fileInfo(iTxt,iDt)%geographic_orientation
                     Exangle = 0.0
@@ -1213,6 +1233,12 @@ Contains
 	        call index_dataVectorMTX(allData,iTxt,iDt,fileInfo(iTxt,iDt)%tx_index,fileInfo(iTxt,iDt)%dt_index,fileInfo(iTxt,iDt)%rx_index)
 	end do
     end do
+
+    call ModEM_timers_stop('read_z')
+    call ModEM_timers_log('read_z')
+    call ModEM_log("Inner: $i outer: $i - nbackspaces: $i", intArgs=(/inner_loop_iter, &
+                                    outer_loop_iter, nbackspaces/))
+    call ModEM_memory_log_report("read_z_list - end")
 
    end subroutine read_Z_list
 

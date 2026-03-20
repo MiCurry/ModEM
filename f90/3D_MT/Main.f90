@@ -10,6 +10,9 @@ module Main
   use userctrl
   use ioascii
   use dataio
+  use ModEM_memory
+  use ModEM_timers
+
   implicit none
 
       ! I/O units ... reuse generic read/write units if
@@ -148,6 +151,9 @@ Contains
     Integer                                     :: iTx,iMod
     type(solnVector_t)                          :: e_temp
     real (kind=prec)                        	:: Omega
+
+    call ModEM_memory_log_report('initGlobalData - start')
+    call ModEM_timers_create('initGlobalData', .true.)
 	!--------------------------------------------------------------------------
 	! Set global output level stored with the file units
 	output_level = cUserDef%output_level
@@ -185,17 +191,17 @@ Contains
 	! Check whether model parametrization file exists and read it, if exists
 	inquire(FILE=cUserDef%rFile_Model,EXIST=exists)
 
+    call ModEM_memory_log_report('before read_modelParam')
 	if (exists) then
 	   ! Read background conductivity parameter and grid; complete airLayers setup
        	   call read_modelParam(grid,airLayers,sigma0,cUserDef%rFile_Model)
-
-
 	else
 	  call warning('No input model parametrization')
 
 	  ! set up an empty grid to avoid segmentation faults in sensitivity tests
 	  call create_grid(1,1,1,1,grid)
 	end if
+    call ModEM_memory_log_report('after read_modelParam')
 
 
 	!--------------------------------------------------------------------------
@@ -211,9 +217,11 @@ Contains
     
     !--------------------------------------------------------------------------
     ! Allocate bAll in all cases except if we compute the BCs internally
+    call ModEM_memory_log_report('Before create_RHSVectorMTX')
     if (.not. COMPUTE_BC) then
         call create_rhsVectorMTX(allData%nTx,bAll)
     end if
+    call ModEM_memory_log_report('after create_RHSVectorMTX')
 
 	!--------------------------------------------------------------------------
 	!  Initialize additional data as necessary
@@ -349,6 +357,10 @@ Contains
     if (len_trim(cUserDef%wFile_EMrhs)>1) then
        write_EMrhs = .true.
     end if
+
+    call ModEM_timers_stop('initGlobalData')
+    call ModEM_timers_log('initGlobalData')
+    call ModEM_memory_log_report('initGlobalData - end')
 
 	return
 
