@@ -44,6 +44,7 @@ module ESolnManager
     use GridDef
     use SolnSpace
     use utilities
+    use ModEM_timers
 
     implicit None
 
@@ -380,21 +381,27 @@ contains
         character(len=*), intent(in), optional :: label
         character(len=512) :: prefix
 
+        call ModEM_timers_create('EsMgr_get')
+        call ModEM_timers_start('EsMgr_get')
+
         e % tx = iTx
 
         ! If we are reading and writing files, do nothing
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world == 0) then
             call wait_on_task(from)
+            call ModEM_timers_stop('EsMgr_get')
             return
         end if
 
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world /= 0) then
             call create_prefix(prefix, E_field_type, label)
             call read_esoln_from_file(e, iTx, pol_index, prefix=prefix)
+            call ModEM_timers_stop('EsMgr_get')
             return
         end if
 
         call EsMgr_recv_e(e, from)
+        call ModEM_timers_stop('EsMgr_get')
 
     end subroutine EsMgr_get
 
@@ -446,18 +453,25 @@ contains
 
         character(len=512) :: prefix
 
+        call ModEM_timers_create('EsMgr_save')
+        call ModEM_timers_start('EsMgr_save')
+
         if (EsMgr_save_in_file .and. EsMgr_ctx % rank_world == 0) then
+            call ModEM_timers_stop('EsMgr_save')
             return
         end if
+
 
         if (EsMgr_save_in_file .and. .not. EsMgr_ctx % rank_world == 0) then
             call create_prefix(prefix, E_field_type, label)
             call EsMgr_write_to_file(e, prefix)
             call communicate_file_done_writing()
+            call ModEM_timers_stop('EsMgr_save')
             return
         end if
 
         call EsMgr_send_e(e, to)
+        call ModEM_timers_stop('EsMgr_save')
 
     end subroutine EsMgr_save
 
@@ -474,7 +488,10 @@ contains
         tag = 0
         to = 0
 
+        call ModEM_timers_create('waiting_on_main')
+        call ModEM_timers_start('waiting_on_main')
         call MPI_Send(dummy_buffer, count, MPI_INTEGER, to, tag, EsMgr_ctx % comm_current, ierr)
+        call ModEM_timers_stop('waiting_on_main')
 
     end subroutine communicate_file_done_writing
 
@@ -491,7 +508,10 @@ contains
         count = 0
         tag = 0
 
+        call ModEM_timers_create('wait_on_task')
+        call ModEM_timers_start('wait_on_task')
         call MPI_Recv(dummy_buff, count, MPI_INTEGER, task, tag, EsMgr_ctx % comm_current, MPI_STATUS_IGNORE, ierr)
+        call ModEM_timers_stop('wait_on_task')
 
     end subroutine wait_on_task
 

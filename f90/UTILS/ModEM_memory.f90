@@ -25,7 +25,7 @@ module ModEM_memory
 ! 5. Ensure you call ModEM_memory_init and (less critically) ModEM_memory_finalize.
 !
     use utilities
-    use iso_c_binding, only : c_long
+    use iso_c_binding, only : c_long_long
 #ifdef MPI
     use mpi
 #endif
@@ -34,8 +34,6 @@ module ModEM_memory
     implicit none
 
     private
-
-    integer :: task_id
 
     public ModEM_memory_print_report
     public ModEM_memory_log_report
@@ -51,13 +49,13 @@ contains
 
         implicit none
 
-        integer, intent(out) :: maxrss_bytes
-        integer (c_long) :: maxrss_bytes_c
+        integer (kind=prec), intent(out) :: maxrss_bytes
+        integer (c_long_long) :: maxrss_bytes_c
 
         interface
             subroutine get_maxrss(maxrss_bytes) bind(c)
-                use iso_c_binding, only : c_long
-                integer (c_long), intent(out) :: maxrss_bytes
+                use iso_c_binding, only : c_long_long
+                integer (c_long_long), intent(out) :: maxrss_bytes
             end subroutine get_maxrss
         end interface
 
@@ -70,12 +68,12 @@ contains
 
         implicit none
 
-        integer :: maxrss
+        integer (kind=prec) :: maxrss
         character (len=512) :: message
 
         call ModEM_memory_get_maxrss(maxrss)
 
-        write(message, "(A,i4.1,A,i16.1)") "Task: ", task_id, " Max RSS: ", maxrss
+        write(message, "(A,i4.1,A,i16.1)") "Task: ", my_task_id, " Max RSS: ", maxrss
 
     end subroutine ModEM_memory_print_report
 
@@ -83,14 +81,14 @@ contains
 
         implicit none
 
-        integer :: maxrss_bytes
-        real, intent(out) :: maxrss_kb
-        real, intent(out) :: maxrss_mb
-        real, intent(out) :: maxrss_gb
+        integer (kind=c_long_long) :: maxrss_bytes
+        real (kind=prec), intent(out) :: maxrss_kb
+        real (kind=prec), intent(out) :: maxrss_mb
+        real (kind=prec), intent(out) :: maxrss_gb
 
-        maxrss_kb = maxrss_bytes / 1.0
-        maxrss_mb = maxrss_kb / 1000.0
-        maxrss_gb = maxrss_mb / 1000.1
+        maxrss_kb = maxrss_bytes / 1024.0
+        maxrss_mb = maxrss_kb / 1024.0
+        maxrss_gb = maxrss_mb / 1024.0
 
         write(0,*) "Maxrss_bytes: ", maxrss_bytes, maxrss_kb, maxrss_mb, maxrss_gb
 
@@ -102,8 +100,8 @@ contains
 
         character (len=*), intent(in) :: message
         character (len=*), parameter :: LOG_MSG_FMT = "(A, A, F18.1, A, F18.1, A, F18.1, A)"
-        integer :: maxrss
-        real :: maxrss_bytes, maxrss_kb, maxrss_mb, maxrss_gb
+        integer (kind=prec) :: maxrss
+        real (kind=prec) :: maxrss_bytes, maxrss_kb, maxrss_mb, maxrss_gb
         character (len=512) :: log_message
 
         call ModEM_memory_get_maxrss(maxrss)
@@ -122,16 +120,20 @@ contains
         character (len=*), parameter :: LOG_MSG_FMT = "(A, A, F18.1, A, F18.1, A, F18.1, A)"
         character (len=512) :: log_message
         integer :: comm
+        integer :: ierr_lcl
 
-
-        integer :: maxrss, global_maxrss
-        real :: maxrss_bytes, maxrss_kb, maxrss_mb, maxrss_gb
+        integer (kind=prec) :: maxrss, global_maxrss
+        real (kind=prec) :: maxrss_bytes, maxrss_kb, maxrss_mb, maxrss_gb
 
         call ModEM_memory_get_maxrss(maxrss)
 
-        call MPI_reduce(maxrss, global_maxrss, 1, MPI_INTEGER, MPI_SUM, 0, comm, ierr)
+        global_maxrss = 0
+        maxrss_kb = 0
+        maxrss_mb = 0
+        maxrss_gb = 0
+        call MPI_reduce(maxrss, global_maxrss, 1, MPI_LONG, MPI_SUM, 0, comm, ierr_lcl)
 
-        if (taskid == 0) then
+        if (my_task_id == 0) then
             call ModEM_memory_convert_maxrss(global_maxrss, maxrss_kb, maxrss_mb, maxrss_gb)
             write(log_message, LOG_MSG_FMT) trim(message), ", ", maxrss_kb, ' kb ', maxrss_mb, ' mb ', maxrss_gb, ' gb'
             call ModEM_log(log_message, mainOnly=.false., flush_log=.true.)

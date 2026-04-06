@@ -895,6 +895,8 @@ end subroutine ModEM_flush
 !-----------------------------------------------------------------------
 subroutine expand_string(inString, outString, intArgs, logicArgs, realArgs)
 
+  use iso_fortran_env, only: int64
+
   implicit none
 
   !-----------------------------------------------------------------
@@ -902,7 +904,7 @@ subroutine expand_string(inString, outString, intArgs, logicArgs, realArgs)
   !-----------------------------------------------------------------
   character (len=*), intent(in) :: inString  !< Input: message to be expanded
 
-  integer, dimension(:), intent(in), optional :: intArgs
+  integer(kind=prec), dimension(:), intent(in), optional :: intArgs
      !< Input, Optional: array of integer variable values to be used in expansion
   logical, dimension(:), intent(in), optional :: logicArgs
      !< Input, Optional: array of logical variable values to be used in expansion

@@ -2135,6 +2135,8 @@ end subroutine Master_job_Distribute_Taskes
 
 subroutine Master_job_send_inv_iteration(iteration_num)
 
+    use iso_fortran_env, only: int64
+
     implicit none
 
     integer, intent(in) :: iteration_num
@@ -2142,7 +2144,7 @@ subroutine Master_job_send_inv_iteration(iteration_num)
 
 
     call ModEM_log("")
-    call ModEM_log("New Iteration - $i!", intArgs=(/iteration_num/))
+    call ModEM_log("New Iteration - $i!", intArgs=(/int(iteration_num, kind=int64)/))
     call ModEM_log("")
 
     if (para_method.eq.0) then
@@ -2220,6 +2222,8 @@ end subroutine Master_job_send_inv_iteration
 
 !###################   Worker_job: High Level Subroutine   ###################
 Subroutine Worker_job(sigma,d)
+
+     use iso_fortran_env, only: int64
      ! subroutine for *all* worker jobs -
      ! the general idea (from Naser, I believe) is:  
      ! 
@@ -2269,7 +2273,7 @@ Subroutine Worker_job(sigma,d)
  
      ! 2019.05.08, Liu Zhongyin, add isite for rx in dataBlock_t
      integer                       :: isite
-     integer                       :: iteration_number
+     integer(kind=int64)                       :: iteration_number
 
      ! PQMult
      type (modelParam_t) :: dsigma_temp, dsigma_send, Qcomb
@@ -2331,8 +2335,6 @@ Subroutine Worker_job(sigma,d)
          write(6,'(a12,a12,a30,a16,i5)') node_info,' MPI TASK [',         &
     &        trim(worker_job_task%what_to_do),'] received from ',        &
     &        STATUS(MPI_SOURCE)
-
-        call ModEM_log("New Job: "//trim(worker_job_task % what_to_do))
 
          modem_ctx % comm_current = comm_current
          modem_ctx % rank_current = rank_current
@@ -2988,10 +2990,10 @@ Subroutine Worker_job(sigma,d)
                  end do
              end if
 
+            call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+
             call ModEM_memory_log_report('New Iter (me)')
             call ModEM_memory_get_all("New Iter (all): ", MPI_COMM_WORLD)
-
-            call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'REGROUP') then
              ! calculate the time between two regroup events

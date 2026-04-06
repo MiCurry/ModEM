@@ -1,23 +1,28 @@
 module ModEM_logger
 
     use utilities
-    use Declaration_MPI
 
 implicit none
 
     character (len=512), private ::  log_fname
-    integer, private :: log_fid = 0
+    integer, public :: log_fid = 0
+    integer, public :: my_task_id
 
 contains
 
-subroutine ModEM_log_init(mainOnly)
+subroutine ModEM_log_init(task_id, mainOnly)
+
+      use iso_fortran_env, only: int64, real64
 
       implicit none
 
+      integer, intent(in) :: task_id 
       logical, optional, intent(in) :: mainOnly 
       character(len=*), parameter :: log_str_fmt = '(A,I4.4,A)'
 
       logical :: mainOnly_lcl
+
+      my_task_id = task_id
 
       if (present(mainOnly)) then
         mainOnly_lcl = mainOnly
@@ -25,10 +30,10 @@ subroutine ModEM_log_init(mainOnly)
         mainOnly_lcl = .true.
       end if
 
-      if ((taskid == 0 .and. mainOnly_lcl) .or. (.not. mainOnly_lcl)) then
-          write(log_fname, log_str_fmt) 'log.', taskid, '.modem.out'
+      if ((task_id == 0 .and. mainOnly_lcl) .or. (.not. mainOnly_lcl)) then
+          write(log_fname, log_str_fmt) 'log.', task_id, '.modem.out'
           open(newunit=log_fid, file=log_fname, status='replace')
-          call ModEM_log("Log Initalized $i - "//trim(log_fname), intArgs=(/taskid/), mainOnly=mainOnly)
+          call ModEM_log("Log Initalized "//trim(log_fname), mainOnly=mainOnly)
       end if
 
 end Subroutine ModEM_log_init
@@ -99,11 +104,13 @@ end Subroutine ModEM_log_init
 !-----------------------------------------------------------------------
 subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log)
 
+   use iso_fortran_env, only: int64, real64
+
    implicit none
 
    character(len=*), intent(in) :: msg
    logical, intent(in), optional :: mainOnly
-   integer, dimension(:), intent(in), optional :: intArgs  !< Input: integer variable values to insert into message
+   integer(kind=int64), dimension(:), intent(in), optional :: intArgs  !< Input: integer variable values to insert into message
    real(kind=prec), dimension(:), intent(in), optional :: realArgs  !< Input: real variable values to insert into message
         !< Input: exponential notation variable values to insert into message
    logical, dimension(:), intent(in), optional :: logicArgs  !< Input: logical variable values to insert into message
@@ -138,7 +145,7 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
    call expand_string(msg, messageExpanded, intArgs, logicArgs, realArgs)
 
 
-   if ((mainOnly_lcl .and. taskid == 0) .or. (.true.)) then
+   if ((mainOnly_lcl .and. my_task_id == 0) .or. (.true.)) then
        write(fid_lcl,*) trim(messageExpanded)
 
        if (.true.) then

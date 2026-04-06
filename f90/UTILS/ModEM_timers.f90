@@ -53,11 +53,36 @@ module ModEM_timers
     public ModEM_timers_start, ModEM_timers_stop, ModEM_timers_stop_all
     public ModEM_timers_exist, ModEM_timers_get
     public ModEM_timers_print, ModEM_timers_print_all, ModEM_timers_report
+    public ModEM_timers_total_time_secs
+    public calculate_throughput
 
     ! The following will not be public in ModEM (only public for unit testing)
     public accumulate_time, convert_time
 
     contains
+
+    ! Ensure your timer is stopped before calling this function...
+    function ModEM_timers_total_time_secs(timer_name) result(total_time_secs)
+
+        use iso_fortran_env, only: int64, real64
+
+        implicit none
+
+        character (len=*), intent(in) :: timer_name
+        type (ModEM_timer_t), pointer :: timer => null()
+        real (kind=real64) :: total_time_secs
+
+        timer => null()
+
+        timer => ModEM_timers_get(timer_name)
+        if (.not. associated(timer)) then
+            total_time_secs = -1
+        end if
+
+        total_time_secs = real(timer % total_secs) + (real(timer % total_nsecs, kind=real64) / 1e9_int64)
+        write(0,*) "Total_time_secs: ", total_time_secs, timer % total_secs, timer % total_nsecs
+
+    end function ModEM_timers_total_time_secs
 
     function ModEM_timers_exist(timer_name) result(exists)
 
@@ -165,13 +190,21 @@ module ModEM_timers
 
     end subroutine ModEM_timers_start_machine
 
-    subroutine ModEM_timers_start(timer_name)
+    subroutine ModEM_timers_start(timer_name, reset)
 
         implicit none
 
         character (len=*), intent(in) :: timer_name
+        logical, optional, intent(in) :: reset
 
         type (ModEM_timer_t), pointer :: timer
+        logical :: reset_lcl
+
+        if (present(reset)) then
+            reset_lcl = reset
+        else
+            reset_lcl = .false.
+        end if
 
         ! Create a timer if it doesn't exist
         if (ModEM_timers_exist(timer_name)) then
@@ -179,6 +212,18 @@ module ModEM_timers
         else
             call ModEM_timers_create(timer_name)
             timer => ModEM_timers_get(timer_name)
+        end if
+
+        if (reset_lcl) then
+            timer % hours = 0
+            timer % mins = 0
+            timer % secs = 0
+            timer % nsecs = 0
+
+            timer % secs_c = 0
+            timer % nsecs_c = 0
+            timer % total_secs = 0
+            timer % total_nsecs = 0
         end if
 
         if (timer % is_running) then
@@ -403,6 +448,21 @@ module ModEM_timers
         write(file_descriptor,*) "============================"
 
     end subroutine ModEM_timers_report
+
+    function calculate_throughput(bytes, time_s) result(mbps)
+
+        use iso_fortran_env, only: int64, real64
+
+        implicit none
+
+        integer(kind=int64), intent(in) :: bytes
+        real(kind=real64), intent(in) :: time_s
+        real(kind=real64) :: mbps 
+
+        mbps = (real(bytes,real64) / 1.0e6_real64) / time_s
+        write(0,*) "Bytes: ", bytes, "time_s:", time_s, "MBPS: ", mbps
+
+    end function calculate_throughput
 
     subroutine accumulate_time(timer)
 

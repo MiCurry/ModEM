@@ -12,6 +12,8 @@ module sg_vector
   use math_constants		! math/ physics constants
   use utilities             ! for error and warning messages
   use griddef
+  use ModEM_timers
+  use ModEM_logger
   implicit none
 
   ! Important - overloading the '=' assignment
@@ -143,7 +145,7 @@ module sg_vector
 !     MODULE PROCEDURE diagDiv_rcvector_f
 !     MODULE PROCEDURE diagDiv_crvector_f
 !  END INTERFACE
-
+    
   public		::   create_rvector,  create_cvector, &
        deall_rvector, deall_cvector, &
        write_rvector, write_cvector, &
@@ -665,6 +667,8 @@ Contains
   ! defaults to 'ascii'. use binary for better accuracy.
   subroutine write_cvector(fid, E, ftype)
 
+      use iso_fortran_env, only: int64, real64
+
       integer,        intent(in)		:: fid
       type (cvector), intent(in)		:: E
       character(*), optional, intent(in):: ftype
@@ -676,6 +680,9 @@ Contains
       logical                           :: ok, hasname, binary
       character(80)                     :: fname, isbinary
       character(512)    :: iomsg
+      integer(kind=int64) :: bytes_written, total_bytes_written
+      real(kind=prec) :: mbps
+      type (ModEM_timer_t), pointer :: timer
 
       if(.not. E%allocated) then
          write(0, *) 'cvector must be allocated before call to write_cvector'
@@ -701,30 +708,51 @@ Contains
 
       ! write binary to unformatted files
       if (binary) then
+         call ModEM_timers_create('cvector_write')
+         call ModEM_timers_start('cvector_write')
+
+         inquire(iolength=bytes_written) E%nx,E%ny,E%nz,E%gridType
+         total_bytes_written = 0 + bytes_written
          write(fid, iostat=istat, iomsg=iomsg) E%nx,E%ny,E%nz,E%gridType
          if (istat /= 0) then
              write(0,*) "ERROR: There was an writing file '", trim(fname), "' header"
              write(0,*) "ERROR: Reason: ", trim(iomsg)
              call ModEM_abort()
          end if
+
+         inquire(iolength=bytes_written) E % x
          write(fid, iostat=istat, iomsg=iomsg) E%x
+         total_bytes_written = total_bytes_written + bytes_written
          if (istat /= 0) then
              write(0,*) "ERROR: There was an writing file '", trim(fname), "' E % x"
              write(0,*) "ERROR: Reason: ", trim(iomsg)
              call ModEM_abort()
          end if
+
+         inquire(iolength=bytes_written) E % y
          write(fid, iostat=istat, iomsg=iomsg) E%y
+         total_bytes_written = total_bytes_written + bytes_written
          if (istat /= 0) then
              write(0,*) "ERROR: There was an writing file '", trim(fname), "' E % y"
              write(0,*) "ERROR: Reason: ", trim(iomsg)
              call ModEM_abort()
          end if
+
+         inquire(iolength=bytes_written) E % z
          write(fid, iostat=istat, iomsg=iomsg) E%z
+         total_bytes_written = total_bytes_written + bytes_written
          if (istat /= 0) then
              write(0,*) "ERROR: There was an writing file '", trim(fname), "' E % z"
              write(0,*) "ERROR: Reason: ", trim(iomsg)
              call ModEM_abort()
          end if
+
+         call ModEM_timers_stop('cvector_write', accumulate=.false.)
+         !call ModEM_timers_print('cvector_write', log_fid)
+
+         mbps = calculate_throughput(total_bytes_written, ModEM_timers_total_time_secs('cvector_write'))
+         call ModEM_log('cvector_write - nBytes: $i time $r MBPS: $r', intArgs=(/total_bytes_written/), &
+                realArgs=(/ModEM_timers_total_time_secs('cvector_write'), mbps/))
          return
       end if
 
@@ -909,6 +937,8 @@ Contains
          write(0,*) 'Warning: Unable to read cvector from formatted file ',trim(fname)
       endif
 
+      call ModEM_timers_create('cvector_read')
+      call ModEM_timers_start('cvector_read')
       if (binary) then
          ! read binary from unformatted files
          read(fid) Nx,Ny,Nz,gridType
@@ -962,6 +992,9 @@ Contains
             write(0, '(A, i4.4, A, A)') 'ERROR: Error read iostat code:', istat, ' Message: ', trim(iomsg)
             call ModEM_abort()
          end if
+
+         call ModEM_timers_stop('cvector_read')
+         !call ModEM_timers_print('cvector_read', log_fid)
          return
       end if
 
@@ -3069,5 +3102,30 @@ Contains
     E2%temporary = .true.
 
   end function imag_cvector_f  ! imag_cvector_f
+
+  function c_vector_size_bytes(e) result(bytes)
+
+      use iso_c_binding, only : c_sizeof
+      use iso_fortran_env, only: int64
+
+      implicit none
+
+      type (cvector), intent(in) :: e
+      integer(kind=int64) :: bytes
+      integer(kind=int64) :: x_size, y_size, z_size
+      integer(kind=int64) :: xBytes, yBytes, zBytes
+
+      x_size = size(e % x)
+      y_size = size(e % y)
+      z_size = size(e % z)
+
+      xBytes = x_size * (c_sizeof(e % x))
+      yBytes = y_size * (c_sizeof(e % y))
+      zBytes = z_size * (c_sizeof(e % z))
+
+      write(0,*) "Sizes: ", x_size, y_size, z_size, xBytes, yBytes, zBytes, xBytes + yBytes + zBytes
+
+  end function c_vector_size_bytes
+
 
 end module sg_vector ! sg_vector
