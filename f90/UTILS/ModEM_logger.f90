@@ -28,6 +28,7 @@ implicit none
 
     character (len=512), private ::  log_fname
     integer, private :: log_fid = 0
+    integer, public :: my_task_id
 
 contains
 
@@ -45,6 +46,8 @@ subroutine ModEM_log_init(mainOnly)
       else
         mainOnly_lcl = .true.
       end if
+
+      my_task_id = taskid
 
       if ((taskid == 0 .and. mainOnly_lcl) .or. (.not. mainOnly_lcl)) then
           write(log_fname, log_str_fmt) 'log.', taskid, '.modem.out'
