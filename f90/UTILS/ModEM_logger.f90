@@ -48,7 +48,6 @@ subroutine ModEM_log_init(mainOnly)
       end if
 
       my_task_id = taskid
-
       if ((taskid == 0 .and. mainOnly_lcl) .or. (.not. mainOnly_lcl)) then
           write(log_fname, log_str_fmt) 'log.', taskid, '.modem.out'
           open(newunit=log_fid, file=log_fname, status='replace')

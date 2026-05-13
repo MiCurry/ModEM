@@ -18,6 +18,7 @@ module Main_MPI
 
   use Declaration_MPI
   use Sub_MPI
+  use ModEM_logger
   ! use ioascii
 
   implicit none
@@ -1493,6 +1494,41 @@ Subroutine Master_job_Clean_Memory(comm)
 
 end Subroutine Master_job_Clean_Memory
 
+subroutine Master_job_send_inv_iteration(iteration_num, comm)
+
+    implicit none
+
+    integer, intent(in) :: iteration_num
+    integer, intent(in), optional :: comm
+    integer :: task, size_current, comm_current
+
+    if (present(comm)) then
+         if (comm .eq. MPI_COMM_NULL) then
+             comm_current = comm_world
+         else
+             comm_current = comm
+         endif
+     else
+         comm_current = comm_world
+     end if
+     call MPI_COMM_SIZE( comm_current, size_current, ierr )
+
+    worker_job_task % what_to_do = 'ITER_NUM'
+    worker_job_task % per_index = -1
+    worker_job_task % pol_index = -1
+    call create_worker_job_task_place_holder
+    call Pack_worker_job_task
+
+    write(0,*) "MASTER JOB - ITERATION!", iteration_num
+
+    do task = 1, size_current - 1
+        call MPI_SEND(worker_job_package, Nbytes, MPI_PACKED, task, FROM_MASTER, comm_current, ierr)
+    end do
+
+    call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+
+end subroutine Master_job_send_inv_iteration
+
 !#######################    Master_job_Stop_MESSAGE #########################
 Subroutine Master_job_Stop_MESSAGE(comm)
 
@@ -1828,6 +1864,7 @@ Subroutine Worker_job(sigma,d)
      Integer                                :: iper,ipol,i,des_index
      Integer                                :: per_index,per_index_pre 
      Integer                                :: pol_index, stn_index
+     Integer                                :: iteration_number
      Integer                                :: eAll_vec_size
      Integer                                :: comm_current, rank_current
      Integer                                :: cpu_only_ranks
@@ -1855,6 +1892,7 @@ Subroutine Worker_job(sigma,d)
      nTx=d%nTx
      recv_loop=0
      previous_message=''
+     iteration_number = 0
      write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
      do  ! the major loop
@@ -2565,6 +2603,13 @@ Subroutine Worker_job(sigma,d)
              if (associated(group_sizes)) then 
                  deallocate(group_sizes) 
              endif
+
+         elseif (trim(worker_job_task%what_to_do) .eq. 'ITER_NUM' ) then
+
+            iteration_number = iteration_number + 1
+            write(0,*) taskid, " - WORKER_JOB - ITERATION!", iteration_number
+            call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+
          elseif (trim(worker_job_task%what_to_do) .eq. 'STOP' ) then
              ! clear all the temp packages and stop
              if (associated(sigma_para_vec)) then

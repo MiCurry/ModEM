@@ -1,4 +1,4 @@
-module utilities
+ module utilities
 
 	use math_constants
 	implicit none
@@ -40,6 +40,12 @@ Contains
 #ifdef MPI
     integer :: ierr, error_code
 #endif
+
+    flush(0)
+    flush(6)
+
+    call ModEM_flush(0)
+    call ModEM_flush(6)
 
 #ifdef MPI
     call MPI_Abort(MPI_COMM_WORLD, error_code, ierr)
@@ -769,6 +775,53 @@ recursive subroutine QSort(a, ia, i0, i1)
   endif
   return
 end subroutine QSort
+
+subroutine ModEM_flush(funit)
+
+  ! Current WIP utility function to call the fsync system call
+  ! to ensure data has been written to the disk.
+  ! 
+  ! This function currently only works with GFortran as it calls 
+  ! GFortran's fnum. To allow other compilers we will need to do
+  ! some preprocessing.
+
+  use iso_c_binding, only : c_int
+
+  implicit none
+
+  integer, intent(in) :: funit
+  integer :: fd ! Linux/Unix File Descriptor
+  integer :: ret
+  integer(c_int), parameter :: F_BARRIERFSYNC = 85
+  integer(c_int), parameter :: F_FULLFSYNC = 51
+
+
+  interface
+    function fsync(fd) bind(c, name='fsync')
+      use iso_c_binding, only : c_int
+      integer (c_int), value :: fd
+      integer (c_int) :: fsync
+    end function fsync
+  end interface
+
+  interface
+    function fcntl(fildes, cmd, arg) bind(c, name='fcntl')
+      use iso_c_binding, only : c_int
+      integer (c_int), value :: fildes
+      integer (c_int), value :: cmd
+      integer (c_int), value :: arg
+      integer(c_int) :: fcntl
+    end function fcntl
+  end interface
+
+  fd = fnum(funit)
+  flush(funit)
+  call flush(funit)
+
+  ret = fsync(fd)
+  ret = fcntl(fd, F_BARRIERFSYNC, 0_c_int)
+
+end subroutine ModEM_flush
 
 !**********************************************************************
 
