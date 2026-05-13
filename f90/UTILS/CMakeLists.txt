@@ -11,6 +11,13 @@ target_sources(${MODEM_EXE}
     PRIVATE ModEM_logger.f90
 )
 
+if (MODEM_MEMORY)
+    target_sources(${MODEM_EXE}
+        PRIVATE ModEM_getrusage.c
+        PRIVATE ModEM_memory.f90
+    )
+endif()
+
 if (USE_C_TIMERS)
     target_sources(${MODEM_EXE}
         PRIVATE ModEM_machine_timers.c

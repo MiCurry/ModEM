@@ -4,8 +4,6 @@ project(ModEM VERSION 0
         DESCRIPTION "ModEM"
         LANGUAGES Fortran)
 
-enable_language(Fortran)
-
 option(BUILD_MPI "Build MPI version of MPI" ON)
 option(FG "Build the Fine-Grained ModEM Version - (Only compatiable with SP2)" OFF)
 option(USE_C_TIMERS "Use the C timers in ModEM_timers" OFF)
@@ -13,6 +11,7 @@ option(USE_C_TIMERS "Use the C timers in ModEM_timers" OFF)
 set(FORWARD_FORMULATION "SP2" CACHE STRING "Set the forward formulation: < MF | SP | SP2 >")
 set(MODEM_BUILD_DIMS "3D" CACHE STRING "Specify whether to build either the 2D or 3D versino of ModEM < 2D | 3D >")
 set(BUILD_GPU "OFF" CACHE STRING "Specify whether to build GPU options: < OFF | CUDA | HIP >")
+set(MODEM_MEMORY "OFF" CACHE STRING "Build the ModEM memory module for development - requires a C compiler")
 
 # Set a default build type if none was specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -27,7 +26,7 @@ set(SUPPORTED_GPU_OPTS "off;OFF;CUDA;HIP")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
-if (USE_C_TIMERS)
+if (USE_C_TIMERS OR MODEM_MEMORY)
         enable_language(C)
 endif()
 
