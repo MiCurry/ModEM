@@ -594,9 +594,6 @@ Contains
     call setup_typeDict()
 
     ! Now, allocate ample storage for the receiver dictionary
-    write(6,*) 'about to allocate rxDict'
-    call setup_rxDict(MAX_NRX)
-    write(6,*) 'rxDict allocated'
 
     ! Save the user preferences
     nTxt = 5
@@ -666,6 +663,7 @@ Contains
             write(0,*) node_info,'Number of receivers: ',nRx
         end if
 
+        call setup_rxDict(nRx)
 
         ! Allocate temporary data arrays
         allocate(new_TxType(nTx),new_Tx(nTx),new_Rx(nRx),STAT=istat)
