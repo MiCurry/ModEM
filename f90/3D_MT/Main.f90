@@ -10,6 +10,9 @@ module Main
   use userctrl
   use ioascii
   use dataio
+  use ModEM_timers
+  use ModEM_memory
+  use ModEM_logger
   implicit none
 
       ! I/O units ... reuse generic read/write units if
@@ -148,6 +151,11 @@ Contains
     Integer                                     :: iTx,iMod
     type(solnVector_t)                          :: e_temp
     real (kind=prec)                        	:: Omega
+
+    call ModEM_log('init global data - starting')
+    call ModEM_timers_create('initGlobalData', .true.)
+    call ModEM_memory_get_all('initGlobalData - start')
+
 	!--------------------------------------------------------------------------
 	! Set global output level stored with the file units
 	output_level = cUserDef%output_level
@@ -185,6 +193,9 @@ Contains
 	! Check whether model parametrization file exists and read it, if exists
 	inquire(FILE=cUserDef%rFile_Model,EXIST=exists)
 
+    call ModEM_timers_create('read_modelParam', .true.)
+    call ModEM_memory_get_all('initGlobalData - before read_modelParam')
+
 	if (exists) then
 	   ! Read background conductivity parameter and grid; complete airLayers setup
        	   call read_modelParam(grid,airLayers,sigma0,cUserDef%rFile_Model)
@@ -197,10 +208,17 @@ Contains
 	  call create_grid(1,1,1,1,grid)
 	end if
 
+    call ModEM_timers_stop('read_modelParam')
+    call ModEM_timers_print('read_modelParam')
+    call ModEM_memory_get_all('initGlobalData - after read_modelParam')
+
 
 	!--------------------------------------------------------------------------
 	!  Read in data file (only a template on input--periods/sites)
 	inquire(FILE=cUserDef%rFile_Data,EXIST=exists)
+
+    call ModEM_timers_create('read_dataVectorMTX', .true.)
+    call ModEM_memory_get_all('initGlobalData - before read_dataVectorMTX')
 
 	if (exists) then
        !  This also sets up dictionaries
@@ -208,7 +226,11 @@ Contains
     else
        call warning('No input data file - unable to set up dictionaries')
     end if
-    
+
+    call ModEM_timers_stop('read_dataVectorMTX')
+    call ModEM_timers_print('read_dataVectorMTX')
+    call ModEM_memory_get_all('initGlobalData - after read_dataVectorMTX')
+
     !--------------------------------------------------------------------------
     ! Allocate bAll in all cases except if we compute the BCs internally
     if (.not. COMPUTE_BC) then
@@ -349,6 +371,11 @@ Contains
     if (len_trim(cUserDef%wFile_EMrhs)>1) then
        write_EMrhs = .true.
     end if
+
+    call ModEM_timers_stop('initGlobalData')
+    call ModEM_timers_print('initGlobalData')
+
+    call ModEM_memory_get_all('initGlobalData - end')
 
 	return
 

@@ -171,7 +171,7 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
    character(len=512) :: messageExpanded !< message after expansion of $ variable insertions
 
    if (present(mainOnly)) then
-       mainOnly_lcl = mainOnly
+       mainOnly_lcl = .false.
    else
        mainOnly_lcl = .true.
    end if
@@ -190,10 +190,10 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
 
    call expand_string(msg, messageExpanded, intArgs, logicArgs, realArgs)
 
-   if ((mainOnly_lcl .and. taskid == 0) .or. (.not. mainOnly_lcl)) then
+   if ((mainOnly_lcl .and. taskid == 0) .or. (.true.)) then
        write(fid_lcl,*) trim(messageExpanded)
 
-       if (flush_lcl) then
+       if (.true.) then
            call flush(fid_lcl)
        end if
     end if

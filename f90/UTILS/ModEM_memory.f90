@@ -130,7 +130,10 @@ contains
 
         call MPI_reduce(maxrss, global_maxrss, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 
+        write(0,*) "I am here and my task id is: ", taskid
+
         if (taskid == 0) then
+            write(0,*) "Main here! writing out maxrss", taskid
             call ModEM_memory_convert_maxrss(global_maxrss, maxrss_kb, maxrss_mb, maxrss_gb)
             write(log_message, LOG_MSG_FMT) trim(message), ", ", maxrss_kb, ' kb ', maxrss_mb, ' mb ', maxrss_gb, ' gb'
             call ModEM_log(log_message, mainOnly=.false., flush_log=.true.)

@@ -17,7 +17,7 @@ void get_maxrss(long *maxrss_bytes) {
     struct rusage usage;
 
 #if  defined(__APPLE_) || defined(__MACH__)
-    conversion = 1.0;
+    conversion = 1000.0;
 #elif __linux__
     conversion = 1.0;
 #else  
