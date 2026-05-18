@@ -22,7 +22,6 @@
 module ModEM_logger
 
     use utilities
-    use Declaration_MPI
 
 implicit none
 
@@ -32,10 +31,11 @@ implicit none
 
 contains
 
-subroutine ModEM_log_init(mainOnly)
+subroutine ModEM_log_init(taskid, mainOnly)
 
       implicit none
 
+      integer, intent(in) :: taskid
       logical, optional, intent(in) :: mainOnly 
       character(len=*), parameter :: log_str_fmt = '(A,I4.4,A)'
 
@@ -190,7 +190,7 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
 
    call expand_string(msg, messageExpanded, intArgs, logicArgs, realArgs)
 
-   if ((mainOnly_lcl .and. taskid == 0) .or. (.true.)) then
+   if ((mainOnly_lcl .and. my_task_id == 0) .or. (.true.)) then
        write(fid_lcl,*) trim(messageExpanded)
 
        if (.true.) then

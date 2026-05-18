@@ -101,6 +101,10 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(${MODEM_EXE} PRIVATE ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
 endif()
 
+find_package(umpire REQUIRED)
+target_link_libraries(${MODEM_EXE} PRIVATE umpire::umpire)
+
+
 if (BUILD_GPU STREQUAL "CUDA")
     find_package(CUDAToolkit REQUIRED COMPONENTS cublas cudart cusparse nvml)
     target_link_libraries(${MODEM_EXE} PRIVATE CUDA::cublas CUDA::cudart CUDA::cusparse CUDA::nvml)

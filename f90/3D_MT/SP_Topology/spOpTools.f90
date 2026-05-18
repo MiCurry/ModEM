@@ -2,6 +2,7 @@ module spOpTools
 !  some tools that manipulate sparse matrices in CSR storage
    use math_constants
    use utilities
+   use ModEM_logger
 
 !    Generic matrix types and tools, using CSR storage, 
 !        but with fortran numbering conventions (starting from 1)
@@ -193,6 +194,7 @@ Contains
  
       type(spMatCSR_Real)         :: A
       if(A%allocated) then
+         call ModEM_log('deal_spMatCSR_Real') 
          deallocate(A%row)
          deallocate(A%col)
          deallocate(A%val)
@@ -208,6 +210,7 @@ Contains
    subroutine deall_spMatCSR_Cmplx(A)
       type(spMatCSR_Cmplx)         :: A
       if(A%allocated) then
+         call ModEM_log('deal_spMatCSR_Cmplx') 
          deallocate(A%row)
          deallocate(A%col)
          deallocate(A%val)

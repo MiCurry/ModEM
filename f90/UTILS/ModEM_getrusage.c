@@ -11,19 +11,21 @@
 *   end subroutine get_maxrss
 * end interface
 */
-void get_maxrss(long *maxrss_bytes) {
+void get_maxrss(long long *maxrss_bytes) {
 
-    int conversion;
+    long long conversion;
     struct rusage usage;
 
 #if  defined(__APPLE_) || defined(__MACH__)
-    conversion = 1000.0;
+    conversion = 1ll;
 #elif __linux__
-    conversion = 1.0;
+    // Linux's getrusage is in kilobytes, so convert it to bytes
+    conversion = 1024ll;
 #else  
-    conversion = 1.0;
+    conversion = 1024ll;
 #endif
 
+
     getrusage(RUSAGE_SELF, &usage);
-    *maxrss_bytes = usage.ru_maxrss / conversion;    
+    *maxrss_bytes = usage.ru_maxrss * conversion;    
 }

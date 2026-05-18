@@ -15,6 +15,7 @@ program Mod3DMT
      use utilities
      use ModEM_logger
      !use mtinvsetup
+     use umpire_mod 
 
 #ifdef MPI
      Use Main_MPI
@@ -28,6 +29,11 @@ program Mod3DMT
      ! Variable required for storing the date and time
      type (timer_t)         :: timer
 
+     ! Umpire
+     type (UmpireResourceManager) :: rm
+     type (UmpireAllocator)       :: host_alloc
+     type (UmpireAllocator)       :: host_pool
+
      ! Output variable
      character(80)          :: header
      integer                :: ios
@@ -36,8 +42,20 @@ program Mod3DMT
       call  constructor_MPI
 #endif
 
-    call ModEM_log_init(.false.)
+    call ModEM_log_init(taskid, .false.)
     call ModEM_log('Hello world!')
+
+    call ModEM_log('Making Umpire Quick Pool')
+
+    rm = rm % get_instance()
+    host_alloc = rm % get_allocator_by_name("HOST")
+
+
+    host_pool = rm % make_allocator_quick_pool("HOST_POOL", host_alloc,    &
+                    1024_8 * 1024_8,            &
+                    4_8 * 1024_8)
+
+
 
 #ifdef MPI
      if (taskid == 0) then

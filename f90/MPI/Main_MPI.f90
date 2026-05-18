@@ -19,6 +19,7 @@ module Main_MPI
   use Declaration_MPI
   use Sub_MPI
   use ModEM_logger
+  use ModEM_memory
   ! use ioascii
 
   implicit none
@@ -1521,9 +1522,12 @@ subroutine Master_job_send_inv_iteration(iteration_num, comm)
 
     write(0,*) "MASTER JOB - ITERATION!", iteration_num
 
+
     do task = 1, size_current - 1
         call MPI_SEND(worker_job_package, Nbytes, MPI_PACKED, task, FROM_MASTER, comm_current, ierr)
     end do
+
+    call ModEM_memory_get_all('iteration: ')
 
     call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
@@ -1966,9 +1970,20 @@ Subroutine Worker_job(sigma,d)
              end if
              if ((rank_local.eq.0) .or. (para_method.eq.0)) then
                  ! leader prepares the basic data structure
+
+                 call ModEM_memory_log_report('Before initSolver')
+                 write(0,*) "Before initSolver"
                  call initSolver(per_index,sigma,grid,e0,size_local)
+                 write(0,*) "after nitSolver"
+                 call ModEM_memory_log_report('after initSolver')
+
                  call set_e_soln(pol_index,e0)
+
+                 call ModEM_memory_log_report('before fwdSetup')
+                 write(0,*) "Before fwdSetup"
                  call fwdSetup(per_index,e0,b0)
+                 write(0,*) "AfterfwdSetup"
+                 call ModEM_memory_log_report('after fwdSetup')
              else
                  ! worker just fills in some dummy parameters
                  iTx = 1
@@ -1978,6 +1993,7 @@ Subroutine Worker_job(sigma,d)
              end if
              if ((para_method.eq.0).or.(size_local.eq.1)) then
                  ! you are on your own, bro!
+                 write(0,*) "calling fwdSolve"
                  call fwdSolve(per_index,e0,b0,device_id) 
              else
 #ifdef PETSC
@@ -2608,6 +2624,9 @@ Subroutine Worker_job(sigma,d)
 
             iteration_number = iteration_number + 1
             write(0,*) taskid, " - WORKER_JOB - ITERATION!", iteration_number
+
+            call ModEM_memory_get_all('iteration')
+
             call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'STOP' ) then

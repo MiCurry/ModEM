@@ -96,6 +96,8 @@ Contains
       call deall_rvector(length)
       call deall_rvector(area)
 
+      write(0,*) 'DONE!'
+
   end subroutine EdgeVolume  ! EdgeVolume
 
   ! *************************************************************************
@@ -152,6 +154,8 @@ Contains
 
       call deall_rvector(length)
       call deall_rvector(area)
+
+      write(0,*) 'DONE!'
 
   end subroutine FaceVolume  ! FaceVolume
 
@@ -220,6 +224,7 @@ Contains
 
       ! flip the coordinate directions back to MT code notations
       call coordFlip_rscalar(V_N, gV_N, Cartesian)
+      write(0,*) 'DONE!'
 
   end subroutine NodeVolume
 
@@ -288,6 +293,7 @@ Contains
 
       ! flip the coordinate directions back to MT code notations
       call coordFlip_rscalar(V_C, gV_C, Cartesian)
+      write(0,*) 'DONE!'
 
   end subroutine CellVolume  ! CellVolume
 
@@ -359,6 +365,7 @@ Contains
 
       ! flip the coordinate directions back to MT code notations
       call coordFlip_rvector(l_E, gl_E, Cartesian)
+      write(0,*) 'DONE!'
 
   end subroutine EdgeLength
 
@@ -443,6 +450,8 @@ Contains
       ! flip the coordinate directions back to MT code notations
       call coordFlip_rvector(l_F, gl_F, Cartesian)
 
+      write(0,*) 'DONE!'
+
       return
       end subroutine FaceLength
 
@@ -525,6 +534,8 @@ Contains
 
       ! flip the coordinate directions back to MT code notations
       call coordFlip_rvector(S_E, gS_E, Cartesian)
+
+      write(0,*) 'DONE!'
 
       return
       end subroutine EdgeArea
@@ -609,6 +620,8 @@ Contains
 
       ! flip the coordinate directions back to MT code notations
       call coordFlip_rvector(S_F, gS_F, Cartesian)
+
+      write(0,*) 'DONE!'
 
       return
       end subroutine FaceArea

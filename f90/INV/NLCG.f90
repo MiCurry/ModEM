@@ -5,6 +5,8 @@ module NLCG
 use ModEM_timers
 use invcore
 use utilities
+use ModEM_logger
+use Main_MPI
 
 
 implicit none
@@ -292,6 +294,9 @@ Contains
 
    ! starting model contains the rough deviations from the prior
    mHat = m
+
+   call ModEM_log('Before function for the first time')
+   call Master_job_send_inv_iteration(-1)
 
    !  compute the penalty functional and predicted data
    call func(lambda,d,m0,mHat,value,mNorm,dHat,eAll,rms)

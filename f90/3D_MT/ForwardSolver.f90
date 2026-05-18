@@ -17,6 +17,8 @@ use dataspace
 use solnspace
 use emsolve3d
 use transmitters
+use ModEM_timers
+use ModEM_memory
 
 implicit none
 
@@ -216,10 +218,14 @@ end subroutine unpack_BC_from_file
    character*80                                 :: gridType
    logical                                      :: initForSens,sigmaNotCurrent
 
+   call ModEM_timers_create('initSolver', .true.)
+   call ModEM_memory_log_report('initSolver - start')
+
    initForSens = present(comb)
 
    !  allocate for background solution
    call create_solnVector(grid,iTx,e0)
+   call ModEM_memory_log_report('initSolver - 2')
 
    if(initForSens) then
       !  allocate for sensitivity solution, RHS - same for all TX types
@@ -236,6 +242,8 @@ end subroutine unpack_BC_from_file
 !        call create_RHS(grid,iTx,comb%b(k))
 !      enddo
    endif
+
+   call ModEM_memory_log_report('initSolver - 3')
 
    if(.NOT.modelDataInitialized) then
    !   Initialize modelData, setup model operators
@@ -256,6 +264,8 @@ end subroutine unpack_BC_from_file
    !   yTx1D = txDict(iTx)%xyzTx(2)   
    !   Call set1DModel(sigma,xTx1D,yTx1D)
    !end if
+
+   call ModEM_memory_log_report('initSolver - 4')
    
 
 !    the following needs work ... want to avoid reinitializing
@@ -271,6 +281,8 @@ end subroutine unpack_BC_from_file
 !      sigmaNotCurrent = .false.
 !   endif
 
+   call ModEM_memory_log_report('initSolver - 5')
+
    if (txDict(iTx)%Tx_type=='SFF') then
       ! compute sigma-sigma1D for the source... NOT PHYSICAL!
       !Call linComb_modelParam(ONE,sigma,MinusONE,sigmaPrimary,sigmaTemp)
@@ -284,10 +296,20 @@ end subroutine unpack_BC_from_file
 
       write(0,'(a35,3i5,a2)') 'Conductivity anomaly dimensions: [',condAnomaly%nx,condAnomaly%ny,condAnomaly%nz,' ]'
    end if
+
+   call ModEM_memory_log_report('initSolver - 6')
+
    ! This needs to be called before solving for a different frequency
    !!!!!!!  BUT AFTER UPDATECOND !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! number of procs
    call UpdateFreq(txDict(iTx)%omega)
+
+   call ModEM_memory_log_report('initSolver - 7')
+
+   call ModEM_timers_stop('initSolver')
+   call ModEM_timers_print('initSolver')
+   call ModEM_memory_log_report('initSolver - end')
+
    end subroutine initSolver
 
    subroutine initMSolver(iTx,sigma,grid,e0,nproc,e,comb)
@@ -324,10 +346,17 @@ end subroutine unpack_BC_from_file
    character*80                                 :: gridType
    logical                                      :: initForSens,sigmaNotCurrent
 
+
+   write(0,*) "We are in initMSolver"
+
+   call ModEM_memory_log_report('initMSolver - 1')
+
    initForSens = present(comb)
 
    !  allocate for background solution
    call create_solnVector(grid,iTx,e0)
+
+   call ModEM_memory_log_report('initMSolver - 2')
 
    if(initForSens) then
       !  allocate for sensitivity solution, RHS - same for all TX types
@@ -344,6 +373,8 @@ end subroutine unpack_BC_from_file
 !        call create_RHS(grid,iTx,comb%b(k))
 !      enddo
    endif
+   
+   call ModEM_memory_log_report('initMSolver - 3')
 
    if(.NOT.modelDataInitialized) then
    !   Initialize modelData, setup model operators
@@ -365,6 +396,7 @@ end subroutine unpack_BC_from_file
    !   Call set1DModel(sigma,xTx1D,yTx1D)
    !end if
    
+   call ModEM_memory_log_report('initMSolver - 4')
 
 !    the following needs work ... want to avoid reinitializing
 !     operator coefficients when conductivity does not change;
@@ -378,6 +410,7 @@ end subroutine unpack_BC_from_file
        call updateCond(sigma)
 !      sigmaNotCurrent = .false.
 !   endif
+   call ModEM_memory_log_report('initMSolver - 5')
 
    if (txDict(iTx)%Tx_type=='SFF') then
       ! compute sigma-sigma1D for the source... NOT PHYSICAL!
@@ -392,6 +425,9 @@ end subroutine unpack_BC_from_file
 
       write(0,'(a35,3i5,a2)') 'Conductivity anomaly dimensions: [',condAnomaly%nx,condAnomaly%ny,condAnomaly%nz,' ]'
    end if
+
+   call ModEM_memory_log_report('initMSolver - 6')
+
    ! This needs to be called before solving for a different frequency
    !!!!!!!  BUT AFTER UPDATECOND !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! number of procs
@@ -400,6 +436,9 @@ end subroutine unpack_BC_from_file
    else
        call UpdateFreq(txDict(iTx)%omega)
    endif
+
+   call ModEM_memory_log_report('initMSolver - 7')
+
    end subroutine initMSolver
    !**********************************************************************
    subroutine initSolverWithOutE0(iTx,sigma,grid,e,comb)

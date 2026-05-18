@@ -17,6 +17,7 @@ module modelOperator3D
    use sg_boundary ! seems ironic in a sparse matrix module
    use nestedem
    use boundary_ws
+   use ModEM_memory
 
    implicit none
    save
@@ -84,33 +85,55 @@ Contains
       type (grid_t), intent(in)             :: inGrid
       integer                               :: nz,nInterior,n
 
+      call ModEM_memory_log_report('ModelDataInit - 1')
+
       !   copy inGrid to mGrid :  do we really need a copy?
       call copy_grid(mGrid,inGrid)
+
+      call ModEM_memory_log_report('ModelDataInit - 2')
 
       !   set sparse matrices for curl (T) and grad (G)
       !    operator topolgies; these sparse matrices are stored
       !    in module spOpTopology
       call setCurlTopology(mGrid)
+
+      call ModEM_memory_log_report('ModelDataInit - 3')
       call setGradTopology(mGrid)
+
+      call ModEM_memory_log_report('ModelDataInit - 4')
+
       call boundaryIndex(EDGE,mGrid,EDGEb,EDGEi)
+
+      call ModEM_memory_log_report('ModelDataInit - 5')
+
       call boundaryIndex(CORNER,mGrid,NODEb,NODEi)
+
+      call ModEM_memory_log_report('ModelDataInit - 6')
+
       nInterior = size(EDGEi)
       n = nInterior + size(EDGEb)
       !   find indicies (in vector of all) of boundary and interior edges
       !   allocate for diagonal part of curl-curl operator
       !     (maybe this should just be for interior edges)
       !      here for all edges
+      call ModEM_memory_log_report('ModelDataInit - 7')
       allocate(VomegaMuSig(nInterior))
 
+      call ModEM_memory_log_report('ModelDataInit - 8')
       !    set metric elements
       !     these are stored as real arrays (all elements, including
       !         on boundaries) in module MetricElements
       call setFaceArea(mGrid)
       call setDualFaceArea(mGrid)
+      call ModEM_memory_log_report('ModelDataInit - 10')
       call setEdgeLength(mGrid)
+      call ModEM_memory_log_report('ModelDataInit - 11')
       call setDualEdgeLength(mGrid)
+      call ModEM_memory_log_report('ModelDataInit - 12')
       call setVnode(mGrid)
+      call ModEM_memory_log_report('ModelDataInit - 13')
       call setVedge(mGrid)
+      call ModEM_memory_log_report('ModelDataInit - 14')
 
       ! set a default omega
       omega = 0.0
@@ -118,6 +141,7 @@ Contains
       call CurlCurlSetUp()
       ! uncomment the following line to do divergence correction in CCGD 
       ! call DivCorInit()
+      call ModEM_memory_log_report('ModelDataInit - 15')
 
    end subroutine ModelDataInit
    !**********************************************************************
@@ -404,22 +428,35 @@ Contains
       nz = T%row(T%nRow+1)-1
       allocate(Dtemp(m))
 
+      call ModEM_memory_log_report('CurlCurlSetup - 1')
+
       call create_spMatCSR(m,n,nz,Temp)
+      call ModEM_memory_log_report('CurlCurlSetup - 2')
       call create_spMatCSR(n,m,nz,Ttrans)
+      call ModEM_memory_log_report('CurlCurlSetup - 3')
       call create_spMatCSR(m,n,nz,CC)
+      call ModEM_memory_log_report('CurlCurlSetup - 4')
       call RMATxDIAG(T,EdgeL,Temp)
+      call ModEM_memory_log_report('CurlCurlSetup - 5')
       Dtemp = DualEdgeL/FaceA
       call DIAGxRMAT(Dtemp,Temp,CC)
+      call ModEM_memory_log_report('CurlCurlSetup - 6')
       call RMATtrans(T,Ttrans)
+      call ModEM_memory_log_report('CurlCurlSetup - 7')
       call RMATxRMAT(Ttrans,CC,Temp)
+      call ModEM_memory_log_report('CurlCurlSetup - 8')
       call DIAGxRMAT(EdgeL,Temp,CC)
+      call ModEM_memory_log_report('CurlCurlSetup - 9')
 !     divide CC into boundary and interial matrices
       call subMatrix_Real(CC,EDGEi,EDGEi,CCii)
+      call ModEM_memory_log_report('CurlCurlSetup - 10')
       call subMatrix_Real(CC,EDGEi,EDGEb,CCib)
+      call ModEM_memory_log_report('CurlCurlSetup - 11')
       call deall_spMatCSR(Temp)
       call deall_spMatCSR(Ttrans)
       call deall_spMatCSR(CC)
       deallocate(Dtemp)
+      call ModEM_memory_log_report('CurlCurlSetup - 12')
       return
    end subroutine
 !*****************************************************************************
