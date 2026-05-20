@@ -12,6 +12,9 @@ module sg_vector
   use math_constants		! math/ physics constants
   use utilities             ! for error and warning messages
   use griddef
+  use umpire_mod 
+  use, intrinsic :: iso_c_binding, only : c_ptr, C_f_pointer, c_loc
+
   implicit none
 
   ! Important - overloading the '=' assignment
@@ -184,7 +187,7 @@ module sg_vector
      ! y: edge nodes in y-direction: dimension Nx+1, Ny, Nz+1
      ! z: edge nodes in z-direction: dimension Nx+1, Ny+1, Nz
      ! Note that the arrays are defined through dynamic memory allocation
-     complex(kind=prec), pointer, dimension(:,:,:)  :: x, y, z
+     complex(kind=prec), pointer, dimension(:,:,:)  :: x=>null(), y=>null(), z=>null()
 
      ! Grid Dimensions:
      ! nx is grid dimension (number of cells) in the x-direction
@@ -352,6 +355,11 @@ Contains
     integer                            :: status,nx,ny,nz
 
     character (len=80), intent(in)     :: gridType
+    type (UmpireResourceManager) :: rm
+    type (UmpireAllocator) :: pool
+
+    rm = rm % get_instance()
+    pool = rm % get_allocator_by_name("HOST_POOL")
 
 	! First deallocate anything, that's allocated
 	call deall_rvector(E)
@@ -378,23 +386,22 @@ Contains
 	   ! 1) E%x(:,1,:) and E%x(:,ny+1,:) are undefined,
 	   ! 2) E%y(nx+1,:,:) and E%z(nx+1,:,:) are repetitios,
 	   ! 3) E%x(-1,0,ny+1,ny+2,:,:) will be needed for interpolation.
-       allocate(E%x(nx,ny+1,nz+1), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
-       allocate(E%y(nx+1,ny,nz+1), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
-       allocate(E%z(nx+1,ny+1,nz), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
+       call pool % allocate(E % x, [nx, ny + 1, nz + 1])
+       call pool % allocate(E % y, [nx + 1, ny, nz + 1])
+       call pool % allocate(E % z, [nx + 1, ny + 1, nz])
+       status = 0
+       E % allocated = .true.
+
     else if (E%gridType == FACE) then
 	   ! For spherical problem:
 	   ! 1) E%y(:,1,:) and E%y(:,ny+1,:) are undefined,
 	   ! 2) E%x(nx+1,:,:) is repetitios and equals E%x(1,:,:),
 	   ! 3) E%z(:,:,1) and E%z(:,:,nz+1) are undefined.
-       allocate(E%x(nx+1,ny,nz), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
-       allocate(E%y(nx,ny+1,nz), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
-       allocate(E%z(nx,ny,nz+1), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
+       !allocate(E%x(nx+1,ny,nz), STAT=status)
+       call pool % allocate(E % x, [nx + 1, ny, nz])
+       call pool % allocate(E % y, [nx, ny + 1, nz])
+       call pool % allocate(E % z, [nx, ny, nz + 1])
+       E % allocated = .true.
     else
        write (0, *) 'not a known tag'
     end if
@@ -404,7 +411,7 @@ Contains
        E%y = R_ZERO
        E%z = R_ZERO
     else
-        write (0, *) 'Warning: unable to allocate rvector - invalid grid supplied'
+        write (0, *) 'Warning: unable to allocate rvector - invalid grid supplied 1'
     end if
 
   end subroutine create_rvector  ! create_rvector
@@ -425,6 +432,13 @@ Contains
     integer                             :: status,nx,ny,nz
 
     character (len=80), intent(in)      :: gridType
+    type (UmpireResourceManager) :: rm
+    type (UmpireAllocator) :: pool
+    integer (kind=8) :: nbytes
+    type (c_ptr) :: ptr
+
+    rm = rm % get_instance()
+    pool = rm % get_allocator_by_name("HOST_POOL")
 
 	! First deallocate anything, that's allocated
     call deall_cvector(E)
@@ -453,12 +467,21 @@ Contains
 	   ! 2) E%y(nx+1,:,:) and E%z(nx+1,:,:) are repetitious,
 	   ! 3) E%z(:,1,k) and E%z(:,ny+1,k) indep. of i for a fixed k,
 	   ! 4) E%x(-1,0,ny+1,ny+2,:,:) will be needed for interpolation.
-       allocate(E%x(nx,ny+1,nz+1), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
-       allocate(E%y(nx+1,ny,nz+1), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
-       allocate(E%z(nx+1,ny+1,nz), STAT=status)
-       E%allocated = E%allocated .and. (status .EQ. 0)
+
+       nbytes = (2 * prec) * (nx * (ny + 1) * (nz + 1))
+       ptr = pool % allocate_pointer(nbytes)
+       call c_f_pointer(ptr, E % x, [nx, ny + 1, nz + 1])
+
+       nbytes = (2 * prec) * ((nx + 1) * ny * (nz + 1))
+       ptr = pool % allocate_pointer(nbytes)
+       call c_f_pointer(ptr, E % y, [nx + 1, ny, nz + 1])
+
+       nbytes = (2 * prec) * ((nx + 1) * (ny + 1) * nz)
+       ptr = pool % allocate_pointer(nbytes)
+       call c_f_pointer(ptr, E % z, [nx + 1, ny + 1, nz])
+
+       E%allocated = .true.
+
     else if (E%gridType == FACE) then
 	   ! For spherical problem:
 	   ! 1) E%y(:,1,:) and E%y(:,ny+1,:) are undefined,
@@ -469,16 +492,18 @@ Contains
        E%allocated = E%allocated .and. (status .EQ. 0)
        allocate(E%z(nx,ny,nz+1), STAT=status)
        E%allocated = E%allocated .and. (status .EQ. 0)
+       
     else
        write (0, *) 'not a known tag'
     end if
+
 
     if (E%allocated) then
        E%x = C_ZERO
        E%y = C_ZERO
        E%z = C_ZERO
     else
-        write (0, *) 'Warning: unable to allocate cvector - invalid grid supplied'
+        write (0, *) 'Warning: unable to allocate cvector - invalid grid supplied 2'
     end if
 
   end subroutine create_cvector  ! create_cvector
@@ -493,11 +518,18 @@ Contains
     type (rvector)  :: E
     integer	    :: status
 
+    type (UmpireResourceManager) :: rm
+    type (UmpireAllocator) :: pool
+    type (c_ptr) :: ptr
+
+    rm = rm % get_instance()
+    pool = rm % get_allocator_by_name("HOST_POOL")
+
     ! deallocate memory for x,y,z
     if (E%allocated) then 
-    deallocate(E%x, STAT=status)
-    deallocate(E%y, STAT=status)
-    deallocate(E%z, STAT=status)
+        call pool % deallocate(E%x)
+        call pool % deallocate(E%y)
+        call pool % deallocate(E%z)
     end if
 	!if(associated(E%x)) deallocate(E%x, STAT=status)
 	!if(associated(E%y)) deallocate(E%y, STAT=status)
@@ -522,11 +554,24 @@ Contains
     type (cvector)  :: E
     integer	    :: status
 
+    type (UmpireResourceManager) :: rm
+    type (UmpireAllocator) :: pool
+    type (c_ptr) :: ptr
+
+    rm = rm % get_instance()
+    pool = rm % get_allocator_by_name("HOST_POOL")
+
     ! deallocate memory for x,y,z
     if (E%allocated) then 
-    deallocate(E%x, STAT=status)
-    deallocate(E%y, STAT=status)
-    deallocate(E%z, STAT=status)
+        ptr = c_loc(E % x(1,1,1))
+        call pool % deallocate_pointer(ptr)
+        ptr = c_loc(E % y(1,1,1))
+        call pool % deallocate_pointer(ptr)
+        ptr = c_loc(E % z(1,1,1))
+        call pool % deallocate_pointer(ptr)
+        !deallocate(E%x, STAT=status)
+        !deallocate(E%y, STAT=status)
+        !deallocate(E%z, STAT=status)
     end if
     
 

@@ -31,9 +31,17 @@ program Mod3DMT
      character(80)          :: header
      integer                :: ios
 
+     interface
+         subroutine setup_umpire_pool() bind(c, name="setup_umpire_pool")
+         end subroutine setup_umpire_pool
+     end interface
+
+
 #ifdef MPI
       call  constructor_MPI
 #endif
+
+    call setup_umpire_pool()
 
 #ifdef MPI
      if (taskid == 0) then

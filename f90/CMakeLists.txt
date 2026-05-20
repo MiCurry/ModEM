@@ -95,6 +95,16 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(${MODEM_EXE} PRIVATE ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
 endif()
 
+# Don't think we actually need to find camp as it comes with umpire, but doing it 
+# because I was having linking errors.
+find_package(camp REQUIRED)
+target_link_libraries(${MODEM_EXE} PRIVATE camp)
+find_package(umpire REQUIRED)
+target_link_libraries(${MODEM_EXE} PRIVATE umpire::umpire)
+
+target_sources(${MODEM_EXE} PRIVATE setup_umpire.cpp)
+
+
 if (BUILD_GPU STREQUAL "CUDA")
     find_package(CUDAToolkit REQUIRED COMPONENTS cublas cudart cusparse nvml)
     target_link_libraries(${MODEM_EXE} PRIVATE CUDA::cublas CUDA::cudart CUDA::cusparse CUDA::nvml)

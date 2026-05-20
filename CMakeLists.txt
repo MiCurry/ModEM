@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.17.0)
 
 project(ModEM VERSION 0
         DESCRIPTION "ModEM"
-        LANGUAGES Fortran)
+        LANGUAGES Fortran C CXX)
 
 enable_language(Fortran)
 
@@ -13,6 +13,10 @@ option(USE_C_TIMERS "Use the C timers in ModEM_timers" OFF)
 set(FORWARD_FORMULATION "SP2" CACHE STRING "Set the forward formulation: < MF | SP | SP2 >")
 set(MODEM_BUILD_DIMS "3D" CACHE STRING "Specify whether to build either the 2D or 3D versino of ModEM < 2D | 3D >")
 set(BUILD_GPU "OFF" CACHE STRING "Specify whether to build GPU options: < OFF | CUDA | HIP >")
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Set a default build type if none was specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

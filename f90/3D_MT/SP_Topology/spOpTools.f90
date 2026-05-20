@@ -2,6 +2,10 @@ module spOpTools
 !  some tools that manipulate sparse matrices in CSR storage
    use math_constants
    use utilities
+   use umpire_mod
+
+   use, intrinsic :: iso_fortran_env, only : int64
+   use, intrinsic :: iso_c_binding, only : c_ptr, C_f_pointer, c_loc
 
 !    Generic matrix types and tools, using CSR storage, 
 !        but with fortran numbering conventions (starting from 1)
@@ -119,6 +123,11 @@ Contains
       integer, intent(in)               :: m,n,nz
       !   A will be sparse m x n with nz non-zero elements
       type(spMatCSR_Real),  intent(inout)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
 
       if(A%allocated) then
          call deall_spMatCSR(A)
@@ -126,9 +135,11 @@ Contains
 
       A%nRow = m
       A%nCol = n
-      allocate(A%row(m+1))
-      allocate(A%col(nz))
-      allocate(A%val(nz))
+
+      call pool % allocate(A % row, [m+1])
+      call pool % allocate(A % col, [nz])
+      call pool % allocate(A % val, [nz])
+
       A%row(m+1)=nz+1
       A%allocated = .true.
       return
@@ -138,16 +149,34 @@ Contains
       integer, intent(in)               :: m,n,nz
       !   A will be sparse m x n with nz non-zero elements
       type(spMatCSR_Cmplx),  intent(inout)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+
+      integer(int64) :: nbytes
+      type(c_ptr) :: ptr
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
 
       if(A%allocated) then
          call deall_spMatCSR(A)
       endif
 
+     !  nbytes = (2 * prec) * ((nx + 1) * (ny) * (nz + 1))
+     !  ptr = pool % allocate_pointer(nbytes)
+     !  call c_f_pointer(ptr, E % y, [nx + 1, ny, nz + 1])
+
       A%nRow = m
       A%nCol = n
-      allocate(A%row(m+1))
-      allocate(A%col(nz))
-      allocate(A%val(nz))
+
+      call pool % allocate(A % row, [m+1])
+      call pool % allocate(A % col, [nz])
+
+      nbytes = int((int(2, int64) * int(prec, int64)) * int(nz, int64), int64)
+      ptr = pool % allocate_pointer(nbytes)
+
+      call c_f_pointer(ptr, A % val, [nz])
+
       A%row(m+1)=nz+1
       A%allocated = .true.
       return
@@ -157,6 +186,12 @@ Contains
       integer, intent(in)               :: m,n,nz
       !   A will be sparse m x n with nz non-zero elements
       type(spMatIJS_Real),  intent(inout)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
 
       if(A%allocated) then
          call deall_spMatIJS(A)
@@ -164,9 +199,9 @@ Contains
 
       A%nRow = m
       A%nCol = n
-      allocate(A%I(nz))
-      allocate(A%J(nz))
-      allocate(A%S(nz))
+      call pool % allocate(A%I, [nz])
+      call pool % allocate(A%J, [nz])
+      call pool % allocate(A%S, [nz])
       A%allocated = .true.
       return
    end subroutine
@@ -176,15 +211,28 @@ Contains
       !   A will be sparse m x n with nz non-zero elements
       type(spMatIJS_Cmplx),  intent(inout)         :: A
 
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+      integer(int64) :: nbytes
+      type(c_ptr) :: ptr
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
+
       if(A%allocated) then
          call deall_spMatIJS(A)
       endif
 
       A%nRow = m
       A%nCol = n
-      allocate(A%I(nz))
-      allocate(A%J(nz))
-      allocate(A%S(nz))
+
+      call pool % allocate(A%I, [nz])
+      call pool % allocate(A%J, [nz])
+
+      nbytes = int((int(2, int64) * int(prec, int64)) * int(nz, int64), int64)
+      ptr = pool % allocate_pointer(nbytes)
+      call c_f_pointer(ptr, A % S, [nz])
+
       A%allocated = .true.
       return
    end subroutine
@@ -192,10 +240,16 @@ Contains
    subroutine deall_spMatCSR_Real(A)
  
       type(spMatCSR_Real)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
+
       if(A%allocated) then
-         deallocate(A%row)
-         deallocate(A%col)
-         deallocate(A%val)
+         call pool % deallocate(A%row)
+         call pool % deallocate(A%col)
+         call pool % deallocate(A%val)
          A%allocated = .false.
          A%upper = .false.
          A%lower = .false.
@@ -207,10 +261,19 @@ Contains
 !**********************************************************
    subroutine deall_spMatCSR_Cmplx(A)
       type(spMatCSR_Cmplx)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+      integer(kind=8) :: nbytes
+      type(c_ptr) :: ptr
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
+
       if(A%allocated) then
-         deallocate(A%row)
-         deallocate(A%col)
-         deallocate(A%val)
+         call pool % deallocate(A % row)
+         call pool % deallocate(A % col)
+         ptr = c_loc(A % val(1))
+         call pool % deallocate_pointer(ptr)
          A%allocated = .false.
          A%upper = .false.
          A%lower = .false.
@@ -223,10 +286,16 @@ Contains
    subroutine deall_spMatIJS_Real(A)
  
       type(spMatIJS_Real)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
+
       if(A%allocated) then
-         deallocate(A%I)
-         deallocate(A%J)
-         deallocate(A%S)
+         call pool % deallocate(A%I)
+         call pool % deallocate(A%J)
+         call pool % deallocate(A%S)
          A%allocated = .false.
          A%nRow = 0
          A%nCol = 0
@@ -237,10 +306,19 @@ Contains
    subroutine deall_spMatIJS_Cmplx(A)
  
       type(spMatIJS_Cmplx)         :: A
+      type (UmpireResourceManager) :: rm
+      type (UmpireAllocator) :: pool
+      integer(int64) :: nbytes
+      type(c_ptr) :: ptr
+
+      rm = rm % get_instance()
+      pool = rm % get_allocator_by_name("HOST_POOL")
       if(A%allocated) then
-         deallocate(A%I)
-         deallocate(A%J)
-         deallocate(A%S)
+         call pool % deallocate(A%I)
+         call pool % deallocate(A%J)
+         ptr = c_loc (A % S(1))
+         call pool % deallocate_pointer(ptr)
+
          A%allocated = .false.
          A%nRow = 0
          A%nCol = 0
@@ -805,6 +883,7 @@ Contains
       nz = A%row(A%nRow+1)-1
       if(.not.sameSizeCSR_Real(A,B)) then
          if(B%allocated) then
+             write(0,*) 'Deallocating...'
             call deall_spMatCSR_Real(B)
          endif
          call create_spMatCSR(m,n,nz,B)  
@@ -824,7 +903,10 @@ Contains
       enddo
       ! now try to clear zeros in Btmp
       nz = nz - nzero
-      call create_spMatCSR(m,n,nz,B)  
+      if (.not. B % allocated) then
+          call create_spMatCSR(m,n,nz,B)  
+      end if
+    
       if(nzero.eq.0) then
           B%row=Btmp%row
           B%col=Btmp%col
