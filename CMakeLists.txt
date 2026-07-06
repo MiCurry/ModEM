@@ -77,7 +77,7 @@ if (BUILD_SPHERICAL AND NOT FORCE_SPHERICAL)
         message(SEND_ERROR
            "The Spherical Version is experimental and will not work with traditional MT source setup."
            "For more information please see 'Spherical Coordinates' section in the README.md.\n"
-           "To bypass this error run cmake with: '-DBUILD_SPHERICAL -DFORCE_SPHERICAL' flags"
+           "To bypass this error run cmake with: '-DBUILD_SPHERICAL=ON -DFORCE_SPHERICAL=ON' flags"
         )
 endif()
 
@@ -85,7 +85,14 @@ if (BUILD_MPI)
         add_compile_definitions(MPI)
 endif()
 
-if (BUILD_HDF5)
+if (BUILD_HDF5 AND NOT FORCE_HDF5)
+        message(SEND_ERROR
+           "The HDF5 version of ModEM is experiemntal and has some current limitations (that will be "
+           " be fixed soon). For instance, output HDF5 files may not be fully written to disk until "
+           " the ModEM executable exits.\n"
+           "To bypass this error run cmake with: '-DBUILD_HDF5=ON -DFORCE_HDF5=ON' flags."
+        )
+elseif(BUILD_HDF5 AND FORCE_HDF5)
         add_compile_definitions(HDF5)
 endif()
 

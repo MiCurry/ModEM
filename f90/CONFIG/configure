@@ -146,6 +146,27 @@ show_spherical_warning() {
     esac
 }
 
+show_hdf5_warning() {
+    printf "${RED} WARNING - You are making a Makefile for the HDF5 version of ModEM ('-D')!${NC}\n"
+    printf "${RED} WARNING - The HDF5 version is currently experimental has some limitations ${NC}\n"
+    printf "${RED} WARNING - (that will be fixed soon). For instance:.${NC}\n"
+    printf "${RED} WARNING - HDF5 output may not be fully written out until ModEM exits.${NC}\n"
+    read -p "Type (Yes/yes/Y/y) that you agree with this warning to continue: " warning_resp
+    
+    case $warning_resp in
+        YES | Yes | yes | Y | y)
+            return 0
+            ;;
+        *)
+            printf "${RED} ABORTING - NOT BUILDING A SPHERICAL Makefile${NC}\n"
+            exit 1
+            ;;
+
+    esac
+
+
+}
+
 make_spherical_makefile() {
     makefile=$1
 
