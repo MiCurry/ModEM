@@ -8,6 +8,7 @@
     <title>Contributing &#8212; ModEM develop documentation</title>
     <link rel="stylesheet" href="_static/bizstyle.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/css/custom.css" />
     
     <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
     <script src="_static/jquery.js"></script>
@@ -18,6 +19,8 @@
     <script src="_static/bizstyle.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Change Log" href="release_log.html" />
+    <link rel="prev" title="Installing ModEM Dependencies" href="installing_deps.html" />
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
     <!--[if lt IE 9]>
     <script src="_static/css3-mediaqueries.js"></script>
@@ -29,6 +32,12 @@
         <li class="right" style="margin-right: 10px">
           <a href="genindex.html" title="General Index"
              accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="release_log.html" title="Change Log"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="installing_deps.html" title="Installing ModEM Dependencies"
+             accesskey="P">previous</a> |</li>
         <li class="nav-item nav-item-0"><a href="index.html">ModEM develop documentation</a> &#187;</li> 
       </ul>
     </div>
@@ -40,10 +49,36 @@
 <li><a class="reference internal" href="#steps-to-open-a-pull-request-pr">Steps To Open a Pull Request (PR)</a></li>
 <li><a class="reference internal" href="#tips-testing">Tips &amp; Testing</a></li>
 <li><a class="reference internal" href="#building-this-documentation">Building this Documentation</a></li>
+<li><a class="reference internal" href="#git-tips">Git Tips</a><ul>
+<li><a class="reference internal" href="#recommended-workflow">Recommended Workflow</a></li>
+<li><a class="reference internal" href="#reviewing-pull-request-pr">Reviewing Pull Request (PR)</a><ul>
+<li><a class="reference internal" href="#stash-your-changes">Stash Your Changes</a></li>
+<li><a class="reference internal" href="#commit-your-changes">Commit Your Changes</a></li>
+<li><a class="reference internal" href="#fetch-and-checkout-their-code">Fetch and Checkout Their Code</a></li>
+<li><a class="reference internal" href="#getting-your-changes-back">Getting your changes back</a></li>
+<li><a class="reference internal" href="#but-wait-they-updated-their-pr">But wait, they updated their PR!</a></li>
+<li><a class="reference internal" href="#an-easier-method">An easier method?</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#update-your-branch-with-new-changes">Update Your Branch With New Changes</a><ul>
+<li><a class="reference internal" href="#the-easiest-way-git-pull">The easiest way - git pull</a></li>
+<li><a class="reference internal" href="#the-more-complicated-but-cleaner-way-git-rebase">The More Complicated but cleaner way - git rebase</a></li>
+<li><a class="reference internal" href="#is-updating-necessary">Is Updating Necessary?</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#git-stash-tips-and-tricks">Git Stash Tips and Tricks</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
 
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="installing_deps.html"
+                        title="previous chapter">Installing ModEM Dependencies</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="release_log.html"
+                        title="next chapter">Change Log</a></p>
   <div role="note" aria-label="source link">
     <h3>This Page</h3>
     <ul class="this-page-menu">
@@ -111,6 +146,276 @@ and view them and ensure they look correct. You do not need to (and will not be
 able to) commit the built HTML files.</p>
 <p>If you change the documentation, please ensure that it builds without errors.</p>
 </div>
+<div class="section" id="git-tips">
+<h2>Git Tips<a class="headerlink" href="#git-tips" title="Permalink to this headline">¶</a></h2>
+<p>New to Git? Here are some of Miles’ tips for using Git.</p>
+<div class="section" id="recommended-workflow">
+<h3>Recommended Workflow<a class="headerlink" href="#recommended-workflow" title="Permalink to this headline">¶</a></h3>
+<p>I keep my local main up-to-date with upstream <code class="docutils literal notranslate"><span class="pre">magnetotellurics/ModEM</span></code> and I
+don’t commit or merge anything to it ever. That way when I create new branches
+for PR’s they are ‘clean’.</p>
+<p>Whenever I start working on a new feature, I do:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git checkout main
+$ git fetch origin
+$ git reset --hard origin/main <span class="c1"># Make my local main equal to origin/main</span>
+$ git checkout -b my_new_feature
+</pre></div>
+</div>
+<p>This will make your local branch <code class="docutils literal notranslate"><span class="pre">my_new_feature</span></code> equal to the latest changes
+on main, ensuring you start work from the latest changes.</p>
+</div>
+<div class="section" id="reviewing-pull-request-pr">
+<h3>Reviewing Pull Request (PR)<a class="headerlink" href="#reviewing-pull-request-pr" title="Permalink to this headline">¶</a></h3>
+<p>Lets say you are working on a feature in your branch <code class="docutils literal notranslate"><span class="pre">my_feature</span></code> and someone
+adds you as a reviewer on a PR. It’s probably a good idea to checkout those
+changes locally and test them. How can you do this while you are working
+locally? You have a few options:</p>
+<div class="section" id="stash-your-changes">
+<h4>Stash Your Changes<a class="headerlink" href="#stash-your-changes" title="Permalink to this headline">¶</a></h4>
+<p>Stashing is very simple and allows us to store our changes in the ‘stash’ where
+we can retrieve them later.</p>
+<p>First, stash your changes</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ <span class="c1"># You can supply messages to a stash, which makes it easy to find later</span>
+$ git stash -m <span class="s2">&quot;Working on such and such&quot;</span>
+</pre></div>
+</div>
+<p>I like to stash my changes if I am in the middle of a feature. Or, if I have
+changes I simply want to ‘get-rid-of’ before checking out another branch.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Stashing is very powerful! See Stashing Tips and Tricks down below.</p>
+</div>
+</div>
+<div class="section" id="commit-your-changes">
+<h4>Commit Your Changes<a class="headerlink" href="#commit-your-changes" title="Permalink to this headline">¶</a></h4>
+<p>You can also commit your changes onto your branch before moving away if you
+would like:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git add file1.f90 file2.f90
+$ git commit -m <span class="s2">&quot;Did such and such work on file1.f90...&quot;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="fetch-and-checkout-their-code">
+<h4>Fetch and Checkout Their Code<a class="headerlink" href="#fetch-and-checkout-their-code" title="Permalink to this headline">¶</a></h4>
+<p>Now that we have ‘saved’ our changes, we can now go and get the changes
+with the pull request we would like to review.</p>
+<p>First, we will need to determine what remote and what branch the PR comes from.</p>
+<img alt="Example PR Header" class="image-black-border align-center" src="./imgs/pr_image.png" />
+<p>The above image shows the view of a PR that is open on GitHub. Importantly is
+the smaller line that says:</p>
+<div class="line-block">
+<div class="line">‘MiCurry wants to merge 1 commit into ‘magnetotellurics:main’ from</div>
+<div class="line">‘MiCurry:iteration_number’</div>
+</div>
+<p>Meaning, that MiCurry wants to merge his changes in
+<code class="docutils literal notranslate"><span class="pre">MiCurry:iteration_number</span></code> into <code class="docutils literal notranslate"><span class="pre">magnetotellurics:branch</span></code>.</p>
+<p>Here, MiCurry means the ‘MiCurry’ users’ fork, and <code class="docutils literal notranslate"><span class="pre">iteration_number</span></code> is the
+branch name <em>on</em> MiCurry’s fork.</p>
+<p>Similarly to cloning, you will need to go to that user’s fork and select their
+git remote link (Normally in the form of: <a class="reference external" href="https://github.com/MiCurry/ModEM.git">https://github.com/MiCurry/ModEM.git</a>
+or <a class="reference external" href="mailto:git&#37;&#52;&#48;github&#46;com">git<span>&#64;</span>github<span>&#46;</span>com</a>:MiCurry/ModEM.git).</p>
+<p>Add this link to your git remotes locally:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git remote add curry https://github.com/MiCurry/ModEM.git
+</pre></div>
+</div>
+<p>Now, fetch their repo, and checkout the branch associated with their PR:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git fetch curry
+$ git checkout iteration_number
+</pre></div>
+</div>
+<p>Your local version of ModEM is now equal to what is on <cite>MiCurry:iteration_number
+and ready for you to test!</cite></p>
+</div>
+<div class="section" id="getting-your-changes-back">
+<h4>Getting your changes back<a class="headerlink" href="#getting-your-changes-back" title="Permalink to this headline">¶</a></h4>
+<p>Now that you have reviewed their PR, you can easily get your changes back by
+checkout out the branch you were working on above.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git checkout my_feature_branch
+$ <span class="c1"># If you stashed, just apply your changes:</span>
+$ git stash apply
+</pre></div>
+</div>
+</div>
+<div class="section" id="but-wait-they-updated-their-pr">
+<h4>But wait, they updated their PR!<a class="headerlink" href="#but-wait-they-updated-their-pr" title="Permalink to this headline">¶</a></h4>
+<p>Easy! We already have their branch checkout out locally. So we will need to
+either: 1. Switch to that branch and update it or 2. Delete the branch locally
+and check it out again like we did before:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ <span class="c1"># Download the changes from the remote</span>
+$ git checkout iteration_number
+$ <span class="c1"># Fetch and make the local branch equal to the remote</span>
+$ git pull --ff-only curry iteration_number
+</pre></div>
+</div>
+<p>Your local copy of their branch is now good to retest!</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code> performs too operations, a <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">fetch</span></code> and a <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">merge</span></code>.
+Normally, this would result in a merge commit, but because we want our local
+branch to look exactly like whats in the remote, we do <code class="docutils literal notranslate"><span class="pre">-ff-only</span></code> (fast
+foward only).</p>
+</div>
+<p>Now you can also just repeat the process we did intially by first deleting your
+local copy of that branch:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ <span class="c1"># Delete the branch locally:</span>
+$ git branch -d iteration_number
+$ git fetch curry
+$ git checkout iteration_number
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">branch</span> <span class="pre">-d</span></code> <em>only</em> deletes branches locally. If you are afraid of
+losing data, you can always back up a branch before doing something with it.</p>
+</div>
+</div>
+<div class="section" id="an-easier-method">
+<h4>An easier method?<a class="headerlink" href="#an-easier-method" title="Permalink to this headline">¶</a></h4>
+<p>If you want an entirely easier method for testing out someone’s branches you
+can simply just clone their fork of the repository in a new directory:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ <span class="nb">cd</span> ~/
+$ git clone https://github.com/MiCurry/ModEM.git modem-curry
+$ <span class="nb">cd</span> modem-curry
+$ git checkout iteration_number
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="update-your-branch-with-new-changes">
+<h3>Update Your Branch With New Changes<a class="headerlink" href="#update-your-branch-with-new-changes" title="Permalink to this headline">¶</a></h3>
+<p>Occasionally you will want to update your local branch with changes from
+origin/main (potentially this could be other remote branches well, but for this
+we will stick with origin/main).</p>
+<div class="section" id="the-easiest-way-git-pull">
+<h4>The easiest way - git pull<a class="headerlink" href="#the-easiest-way-git-pull" title="Permalink to this headline">¶</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code> is very easy and is probably the method I recommend most for new
+users.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git checkout my_feature
+$ git branch my_feature_bu <span class="c1"># Backup your branch if you would like</span>
+$ <span class="c1"># The bellow command with merge our local branch with origin/main</span>
+$ <span class="c1"># Note: There might be merge conflicts below:</span>
+$ git pull origin main
+</pre></div>
+</div>
+<p>Here, we git pull fetches the changes from the remote (named origin) and then
+merges the branch (named main) into our local branch. We may need to handle
+merge conflicts when we run <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code>.</p>
+<p>This creates a <em>merge</em> commit that merges our branch with the remote/origin.
+The merge commit acts as a way to reconcile two diverging branches. The merge
+commit, in a way, holds what we choose to keep during a merge conflict.</p>
+</div>
+<div class="section" id="the-more-complicated-but-cleaner-way-git-rebase">
+<h4>The More Complicated but cleaner way - git rebase<a class="headerlink" href="#the-more-complicated-but-cleaner-way-git-rebase" title="Permalink to this headline">¶</a></h4>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Rebasing is an advance git mechanic. I recommend using it once you are very
+familar with merging, and dealing with merge conflicts.</p>
+</div>
+<p>While <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code> is easy, it leaves behind these merge commits in your local
+branch. When you make a PR, these merge commits will be present on your
+branch.</p>
+<p>One method for getting rid of these unnecessary merge commits in your local
+branch is to use ‘rebaseing’.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git checkout my_feature
+$ git branch my_feature_bu
+$ git fetch origin
+$ <span class="c1"># Now, we will rebase our changes onto origin main</span>
+$ <span class="c1"># Placing our changes on top of main:</span>
+$ <span class="c1"># The rebase may have multiple merge conflicts you will have to perform!</span>
+$ git rebase origin/main
+</pre></div>
+</div>
+<p>You might need to handle multiple merge requests, and sometimes in the same
+file multiple times. Simply follow the instructions for the rebase (Fix up
+merge conflicts, git add &lt;file-name&gt;, git rebase –continue) until it’s happy.</p>
+<p>The rebase will take all of our new changes made to our local branch, and place
+them directly on top of origin/main. This is essentially like making a new
+branch off of main and committing on top of that! No merge commit will be made!</p>
+<p>This keeps your local branch history very ‘linear’ and no local merge commits
+will appear in your git history.</p>
+<p>However, this changes the ‘history’ of your branch. If you have pushed this
+branch to your remote repository (like GitHub <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">push</span> <span class="pre">my_fork</span> <span class="pre">my_feature</span></code>),
+Git will complain that it has a different history.</p>
+<p>This is nice, because Git is preventing us from pushing unrelated branches over
+each other. However, in this case we want to store our updated/rebased branch
+in our remote, so we can force it:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git branch my_feature_bu_rebased <span class="c1"># Always a good idea</span>
+$ git push --force my_fork my_feature
+</pre></div>
+</div>
+<p>This will update our remote branch to now be equal to your rebased local
+branch!</p>
+</div>
+<div class="section" id="is-updating-necessary">
+<h4>Is Updating Necessary?<a class="headerlink" href="#is-updating-necessary" title="Permalink to this headline">¶</a></h4>
+<p>Imaging you are working on the SP2 forward solver. Consider two scenarios.</p>
+<ol class="arabic simple">
+<li><p>origin/main has been updated with some critical changes to the SP2 forward
+solver</p></li>
+<li><p>origin/main has been updated with some documentation changes.</p></li>
+</ol>
+<p>In the first case, it is definitely necessary to update your local branch with
+origin/main because those changes will most likely effect your work <em>and</em> they
+might have merge conflicts with your changes.</p>
+<p>In the second case, you really <em>do not</em> need to update your local branch.
+Although your branch has divereged from origin/main the changes are unrelated
+and you can avoid the headache of updating. When you merge your PR, the merge
+will automatically reconcile your changes with the docs for us!</p>
+</div>
+</div>
+<div class="section" id="git-stash-tips-and-tricks">
+<h3>Git Stash Tips and Tricks<a class="headerlink" href="#git-stash-tips-and-tricks" title="Permalink to this headline">¶</a></h3>
+<p>Git stashing is more powerful than you think! These commands are some commands
+I use extremely often and they make using <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">stash</span></code> even more useful!</p>
+<p>I am sure you already know about git stash, and git stash apply:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git stash -m <span class="s1">&#39;Optional message you can add&#39;</span>
+$ <span class="c1"># Get the changes out again:</span>
+$ git stash apply
+</pre></div>
+</div>
+<p>This works pretty simply and pretty well, but git stash apply has a bit of a
+flaw in that it always applies the <em>last</em> thing that was git stashed! What if
+we have stashed multiple times?</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git stash -m <span class="s2">&quot;My first stash&quot;</span>
+$ <span class="c1"># make some additional changes</span>
+$ git stash -m <span class="s2">&quot;Stashing these changes too&quot;</span>
+</pre></div>
+</div>
+<p>Now, if you <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">stash</span> <span class="pre">apply</span></code>, git will apply the changes associated with the
+‘Stashing these changes too’ stash. But what if you want the ones that were
+with the ‘My first stash’ stash?</p>
+<p>First, we can use <cite>git stash list</cite> to see all the stashes we have ever made for
+our local clone:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ git stash list
+stash@<span class="o">{</span><span class="m">0</span><span class="o">}</span>: On my_feature: <span class="s1">&#39;Stashing these changes too&#39;</span>
+stash@<span class="o">{</span><span class="m">1</span><span class="o">}</span>: On my_feature: <span class="s1">&#39;My first stash&#39;</span>
+stash@<span class="o">{</span><span class="m">2</span><span class="o">}</span>: WIP on io-choice-namelist: 8d29f3fb saving HDF5 work
+stash@<span class="o">{</span><span class="m">3</span><span class="o">}</span>: WIP on hdf5-updates: 8d29f3fb saving HDF5 work
+</pre></div>
+</div>
+<p>(The last two stashes listed are what stashes look like when you don’t give
+stash a message).</p>
+<p>Here, you can see a list of the stashs I have made on my local repository. As
+you can see, the last stash I made is at the top (‘Stashing these changes
+too’). When you run <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">stash</span> <span class="pre">apply</span></code>, it will apply the stash that is at the
+top of the stash list (<a class="reference external" href="mailto:stash&#37;&#52;&#48;{0">stash<span>&#64;</span>{0</a>}.).:w</p>
+<p>However, if you wanted a different stash, you can specify that stash exactly
+during your apply:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ <span class="c1"># Sometimes you need to put quotes around the stash name</span>
+$ <span class="c1"># as your shell can complain about these characters:</span>
+$ git stash apply <span class="s2">&quot;stash@{1}&quot;</span>
+</pre></div>
+</div>
+<p>What if you have a lot of stashes and you aren’t sure what is contained in
+each?</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ <span class="c1"># Show the files associated with a stash:</span>
+$ git stash show <span class="s2">&quot;stash@{2}&quot;</span>
+$ <span class="c1"># Show the actually differences in the files:</span>
+$ git stash show <span class="s2">&quot;stash@{2}&quot;</span> -p
+</pre></div>
+</div>
+</div>
+</div>
 </div>
 
 
@@ -125,6 +430,12 @@ able to) commit the built HTML files.</p>
         <li class="right" style="margin-right: 10px">
           <a href="genindex.html" title="General Index"
              >index</a></li>
+        <li class="right" >
+          <a href="release_log.html" title="Change Log"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="installing_deps.html" title="Installing ModEM Dependencies"
+             >previous</a> |</li>
         <li class="nav-item nav-item-0"><a href="index.html">ModEM develop documentation</a> &#187;</li> 
       </ul>
     </div>
