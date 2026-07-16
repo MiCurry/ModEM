@@ -31,6 +31,9 @@ html_sidebars = {
     "globaltoc_maxdepth" : 3
 }
 
+html_css_files = [
+    "css/custom.css"
+]
 
 html_theme_options = {
     "globaltoc_maxdepth" : 3
