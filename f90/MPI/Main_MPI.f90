@@ -1796,6 +1796,771 @@ end subroutine Master_job_Distribute_Taskes
      end if
     end subroutine find_next_job
 
+!#######################  Worker_job - helper subroutines  ################
+
+!-----------------------------------------------------------------------------
+subroutine worker_forward(sigma, d, per_index, pol_index, &
+                                  comm_current, rank_current, time_passed)
+! Handle FORWARD modeling task
+     implicit none
+     type(modelParam_t), intent(inout) :: sigma
+     type(dataVectorMTX_t), intent(inout) :: d
+     integer, intent(in) :: per_index, pol_index
+     integer, intent(in) :: comm_current, rank_current
+     double precision, intent(out) :: time_passed
+     
+     integer :: des_index, iTx
+     double precision :: now
+     
+     ! Broadcast to local workers if group leader
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                    MPI_PACKED, des_index,  FROM_MASTER, comm_local, ierr)
+         end do
+     end if
+     
+     ! Initialize solver
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         call initSolver(per_index,sigma,grid,e0,size_local)
+         call set_e_soln(pol_index,e0)
+         call fwdSetup(per_index,e0,b0)
+     else
+         iTx = 1
+         call create_solnVector(grid,iTx,e0)
+         call set_e_soln(pol_index,e0)
+         call create_rhsVector(grid,iTx,b0)
+     end if
+     
+     ! Solve forward problem
+     if ((para_method.eq.0).or.(size_local.eq.1)) then
+         call fwdSolve(per_index,e0,b0,device_id)
+     else
+#ifdef PETSC
+         call fwdSolve(per_index,e0,b0,device_id,comm_local)
+#elif defined(FG)
+         call fwdSolve(per_index,e0,b0,device_id,comm_local)
+#else
+         if (rank_local.eq.0) then
+             call fwdSolve(per_index,e0,b0,device_id)
+         else
+             write(6,'(a12,a18)') node_info, ' hanging around...'
+             write(6,*) ' WARNING: more than enough CPU(s) detected'
+             write(6,*) ' Please consider recompiling with PETSC or FG'
+         endif
+#endif
+     end if
+     
+     ! Send results back to master
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         call create_worker_job_task_place_holder
+         worker_job_task%taskid=rank_current
+         call Pack_worker_job_task
+         call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
+    &                FROM_WORKER, comm_current, ierr)
+         
+         which_pol=1
+         call create_e_param_place_holder(e0)
+         call Pack_e_para_vec(e0)
+         call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                FROM_WORKER, comm_current, ierr)
+     end if
+     
+     call reset_e_soln(e0)
+     now = MPI_Wtime()
+     time_passed = now - previous_time
+     previous_time = now
+end subroutine worker_forward
+
+!-----------------------------------------------------------------------------
+subroutine worker_compute_j(sigma, d, per_index, pol_index, stn_index, &
+                                    dt_index, dt, comm_current, &
+                                    rank_current, time_passed)
+! Handle COMPUTE_J (compute explicit Jacobian) task
+     implicit none
+     type(modelParam_t), intent(inout) :: sigma
+     type(dataVectorMTX_t), intent(inout) :: d
+     integer, intent(in) :: per_index, pol_index, stn_index, dt_index, dt
+     integer, intent(in) :: comm_current, rank_current
+     double precision, intent(out) :: time_passed
+     
+     type(modelParam_t), pointer :: Jreal(:), Jimag(:)
+     type(sparseVector_t), pointer :: L(:)
+     type(modelParam_t), pointer :: Qreal(:), Qimag(:)
+     type(orient_t) :: orient
+     integer :: nComp, nFunc, iFunc, istat, des_index, ipol, iTx
+     logical :: isComplex, Qzero
+     double precision :: now
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                    MPI_PACKED, des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     end if
+     
+     ! Determine number of functionals
+     nComp = d%d(per_index)%data(dt_index)%nComp
+     isComplex = d%d(per_index)%data(dt_index)%isComplex
+     
+     if (isComplex) then
+         if (mod(nComp,2).ne.0) then
+             call errStop('for complex data # of components must be even')
+         endif
+         nFunc = nComp/2
+     else
+         nFunc = nComp
+     endif
+     
+     ! Allocate sensitivity structures (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         allocate(Jreal(nFunc), Jimag(nFunc), STAT=istat)
+         do iFunc = 1,nFunc
+             Jreal(iFunc) = sigma
+             call zero(Jreal(iFunc))
+             Jimag(iFunc) = sigma
+             call zero(Jimag(iFunc))
+         enddo
+     end if
+     
+     ! Initialize solver
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         call initSolver(per_index,sigma,grid,e0,size_local,e,comb)
+         call get_nPol_MPI(e0)
+     else
+         iTx = 1
+         call create_solnVector(grid,iTx,e0)
+         call set_e_soln(pol_index,e0)
+         call create_rhsVector(grid,iTx,comb)
+     end if
+     
+     ! Receive electric fields from master (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         write(6,'(a12,a18,i5,a12)') node_info,' Start Receiving ', &
+    &            orginal_nPol, ' from Master'
+         do ipol=1,nPol_MPI
+             which_pol=ipol
+             call create_e_param_place_holder(e0)
+             call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                    FROM_MASTER,comm_current, STATUS, ierr)
+             call Unpack_e_para_vec(e0)
+         end do
+         write(6,'(a12,a18,i5,a12)') node_info,' Finished Receiving ', &
+    &            orginal_nPol, ' from Master'
+         
+         ! Compute data functionals
+         allocate(L(nFunc), Qreal(nFunc), Qimag(nFunc), STAT=istat)
+         do iFunc=1,nFunc
+             call create_sparseVector(e0%grid,per_index,L(iFunc))
+         end do
+         
+         call EdgeLength(e0%grid, l_E)
+         call FaceArea(e0%grid, S_F)
+         call Lrows(e0,sigma,dt,stn_index,orient,L)
+         call Qrows(e0,sigma,dt,stn_index,Qzero,Qreal,Qimag)
+         call deall_rvector(l_E)
+         call deall_rvector(S_F)
+     end if
+     
+     ! Loop over functionals and solve transpose problems
+     do iFunc = 1,nFunc
+         call zero_rhsVector(comb)
+         if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+             call add_sparseVrhsV(C_ONE,L(iFunc),comb)
+         end if
+         
+         if ((para_method.eq.0).or.(size_local.eq.1)) then
+             call sensSolve(per_index,TRN,e,comb,device_id)
+         else
+#ifdef PETSC
+             call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
+#elif defined(FG)
+             call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
+#else
+             if (rank_local.eq.0) then
+                 call sensSolve(per_index,TRN,e,comb,device_id)
+             else
+                 write(6,'(a12,a18)') node_info, ' hanging around...'
+                 write(6,*) ' WARNING: more than enough CPU(s) detected'
+                 write(6,*) ' Please consider recompiling with PETSC or FG'
+             endif
+#endif
+         end if
+         
+         if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+             call PmultT(e0,sigma,e,Jreal(iFunc),Jimag(iFunc))
+             if (.not. Qzero) then
+                 call scMultAdd(ONE,Qreal(iFunc),Jreal(iFunc))
+                 call scMultAdd(ONE,Qimag(iFunc),Jimag(iFunc))
+             endif
+             call deall_sparseVector(L(iFunc))
+             call deall_modelParam(Qreal(iFunc))
+             call deall_modelParam(Qimag(iFunc))
+         end if
+     enddo
+     
+     ! Send results back to master (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         deallocate(L, Qreal, Qimag, STAT=istat)
+         
+         call create_worker_job_task_place_holder
+         worker_job_task%taskid=rank_current
+         call Pack_worker_job_task
+         call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
+    &                FROM_WORKER, comm_current, ierr)
+         
+         do iFunc = 1,nFunc
+             call create_model_param_place_holder(Jreal(iFunc))
+             call pack_model_para_values(Jreal(iFunc))
+             call MPI_SEND(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                    FROM_WORKER, comm_current, ierr)
+             
+             call create_model_param_place_holder(Jimag(iFunc))
+             call pack_model_para_values(Jimag(iFunc))
+             call MPI_SEND(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                    FROM_WORKER, comm_current, ierr)
+         end do
+     end if
+     
+     call reset_e_soln(e0)
+     now = MPI_Wtime()
+     time_passed = now - previous_time
+     previous_time = now
+end subroutine worker_compute_j
+
+!----------------------------------------------------------------------------- 
+subroutine worker_jmultt(sigma, d, per_index, pol_index, &
+                                 comm_current, rank_current, time_passed)
+! Handle JmultT (adjoint) task
+     implicit none
+     type(modelParam_t), intent(inout) :: sigma
+     type(dataVectorMTX_t), intent(inout) :: d
+     integer, intent(in) :: per_index, pol_index
+     integer, intent(in) :: comm_current, rank_current
+     double precision, intent(out) :: time_passed
+     
+     integer :: des_index, iTx, ipol
+     double precision :: now
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                    MPI_PACKED, des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     end if
+     
+     ! Initialize solver (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         iTx = 1
+         call create_solnVector(grid,iTx,e0)
+         call get_nPol_MPI(e0)
+         
+         write(6,'(a12,a18,i5,a12)') node_info, &
+    &            ' Start Receiving ', orginal_nPol, ' from Master'
+         do ipol=1,nPol_MPI
+             which_pol=ipol
+             call create_e_param_place_holder(e0)
+             call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                    FROM_MASTER,comm_current, STATUS, ierr)
+             call Unpack_e_para_vec(e0)
+         end do
+         
+         call initSolverWithOutE0(per_index,sigma,grid,size_local,e,comb)
+         write(6,'(a12,a18,i5,a12)') node_info, &
+    &            ' Finished Receiving ', orginal_nPol, ' from Master'
+         call LmultT(e0,sigma,d%d(per_index),comb)
+         call set_e_soln(pol_index,e)
+     else
+         iTx = 1
+         call create_solnVector(grid,iTx,e)
+         call set_e_soln(pol_index,e)
+         call create_rhsVector(grid,iTx,comb)
+     end if
+     
+     ! Solve transpose problem
+     if ((para_method.eq.0).or.(size_local.eq.1)) then
+         call sensSolve(per_index,TRN,e,comb,device_id)
+     else
+#ifdef PETSC
+         call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
+#elif defined(FG)
+         call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
+#else
+         if (rank_local.eq.0) then
+             call sensSolve(per_index,TRN,e,comb,device_id)
+         else
+             write(6,'(a12,a18)') node_info, ' hanging around...'
+             write(6,*) ' WARNING: more than enough CPU(s) detected'
+             write(6,*) ' Please consider recompiling with PETSC or FG'
+         end if
+#endif
+     end if
+     
+     call reset_e_soln(e)
+     
+     ! Send results back (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         call create_worker_job_task_place_holder
+         worker_job_task%taskid=rank_current
+         call Pack_worker_job_task
+         call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
+    &                FROM_WORKER, comm_current, ierr)
+         
+         which_pol=1
+         call create_e_param_place_holder(e)
+         call Pack_e_para_vec(e)
+         call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                FROM_WORKER, comm_current, ierr)
+     end if
+     
+     now = MPI_Wtime()
+     time_passed = now - previous_time
+     previous_time = now
+end subroutine worker_jmultt
+
+!-----------------------------------------------------------------------------
+subroutine worker_jmult(sigma, delSigma, per_index, pol_index, &
+                                comm_current, rank_current, time_passed)
+! Handle Jmult (forward sensitivity) task
+     implicit none
+     type(modelParam_t), intent(inout) :: sigma, delSigma
+     integer, intent(in) :: per_index, pol_index
+     integer, intent(in) :: comm_current, rank_current
+     double precision, intent(out) :: time_passed
+     
+     integer :: des_index, iTx, ipol
+     double precision :: now
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                    MPI_PACKED, des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     end if
+     
+     ! Initialize solver (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         call initSolver(per_index,sigma,grid,e0,size_local,e,comb)
+         write(6,'(a12,a18,i5,a12)') node_info, &
+    &            ' Start Receiving    ', orginal_nPol, ' from Master'
+         do ipol=1,orginal_nPol
+             which_pol=ipol
+             call create_e_param_place_holder(e0)
+             call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                    FROM_MASTER,comm_current, STATUS, ierr)
+             call Unpack_e_para_vec(e0)
+         end do
+         write(6,'(a12,a18,i5,a12)') node_info, &
+    &            ' Finished Receiving ', orginal_nPol, ' from Master'
+         call Pmult(e0,sigma,delSigma,comb)
+     else
+         iTx = 1
+         call create_solnVector(grid,iTx,e)
+         call create_rhsVector(grid,iTx,comb)
+     end if
+     
+     call set_e_soln(pol_index,e)
+     
+     ! Solve forward problem
+     if ((para_method.eq.0).or.(size_local.eq.1)) then
+         call sensSolve(per_index,FWD,e,comb,device_id)
+     else
+#ifdef PETSC
+         call sensSolve(per_index,FWD,e,comb,device_id,comm_local)
+#elif defined(FG)
+         call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
+#else
+         if (rank_local.eq.0) then
+             call sensSolve(per_index,FWD,e,comb,device_id)
+         else
+             write(6,'(a12,a18)') node_info, ' hanging around...'
+             write(6,*) ' WARNING: more than enough CPU(s) detected'
+             write(6,*) ' Please consider recompiling with PETSC or FG'
+         end if
+#endif
+     end if
+     
+     call reset_e_soln(e)
+     
+     ! Send results back (leader only)
+     if ((rank_local.eq.0) .or. (para_method.eq.0)) then
+         call create_worker_job_task_place_holder
+         call Pack_worker_job_task
+         call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
+    &                FROM_WORKER, comm_current, ierr)
+         
+         which_pol=1
+         call create_e_param_place_holder(e)
+         call Pack_e_para_vec(e)
+         call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0, &
+    &                FROM_WORKER, comm_current, ierr)
+     end if
+     
+     now = MPI_Wtime()
+     time_passed = now - previous_time
+     previous_time = now
+end subroutine worker_handle_jmult
+
+!-----------------------------------------------------------------------------
+subroutine worker_distribute_ntx(d, comm_current)
+! Handle 'Distribute nTx' task
+     implicit none
+     type(dataVectorMTX_t), intent(inout) :: d
+     integer, intent(in) :: comm_current
+     integer :: des_index, nTx
+     
+     ! Broadcast command to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED, &
+    &                    des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     end if
+     
+     ! Receive nTx from master
+     call MPI_BCAST(nTx, 1, MPI_INTEGER, 0, comm_current, ierr)
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         call MPI_BCAST(nTx, 1, MPI_INTEGER, 0, comm_local, ierr)
+     endif
+     
+     d%nTx=nTx
+end subroutine worker_distribute_ntx
+
+!-----------------------------------------------------------------------------
+subroutine worker_distribute_data(d, comm_current)
+! Handle 'Distribute Data' task
+     implicit none
+     type(dataVectorMTX_t), intent(inout) :: d
+     integer, intent(in) :: comm_current
+     integer :: des_index
+     
+     ! Broadcast command to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED, &
+    &                    des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     endif
+     
+     call create_data_vec_place_holder(d)
+     
+     ! Receive data from master
+     call MPI_BCAST(data_para_vec, Nbytes, MPI_PACKED, 0, &
+    &         comm_current,ierr)
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         call MPI_BCAST(data_para_vec, Nbytes, MPI_PACKED, 0, &
+    &             comm_local,ierr)
+     endif
+     
+     call UnPack_data_para_vec(d)
+     
+     if (associated(data_para_vec)) then
+         deallocate(data_para_vec)
+     endif
+end subroutine worker_distribute_data
+
+!-----------------------------------------------------------------------------
+subroutine worker_distribute_eall(d, comm_current)
+! Handle 'Distribute eAll' task
+     implicit none
+     type(dataVectorMTX_t), intent(inout) :: d
+     integer, intent(in) :: comm_current
+     integer :: iper
+     
+     do iper=1,d%nTx
+         which_per=iper
+         call create_eAll_param_place_holder(e0)
+         call MPI_RECV(eAll_para_vec, Nbytes, MPI_PACKED ,0, &
+    &             FROM_MASTER,comm_current, STATUS, ierr)
+         call Unpack_eAll_para_vec(e0)
+     end do
+     
+     eAll_exist=.true.
+     
+     if (associated(eAll_para_vec)) then
+         deallocate(eAll_para_vec)
+     endif
+end subroutine worker_distribute_eall
+
+!-----------------------------------------------------------------------------
+subroutine worker_distribute_model(sigma, comm_current)
+! Handle 'Distribute Model' task
+     implicit none
+     type(modelParam_t), intent(inout) :: sigma
+     integer, intent(in) :: comm_current
+     integer :: des_index
+     
+     ! Broadcast command to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                   MPI_PACKED, des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     endif
+     
+     call create_model_param_place_holder(sigma)
+     
+     ! Receive model from master
+     call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
+    &        comm_current,ierr)
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
+    &             comm_local,ierr)
+     end if
+     
+     call unpack_model_para_values(sigma)
+     
+     if (associated(sigma_para_vec)) then
+         deallocate(sigma_para_vec)
+     endif
+end subroutine worker_distribute_model
+
+!-----------------------------------------------------------------------------
+subroutine worker_distribute_delsigma(sigma, delSigma, comm_current)
+! Handle 'Distribute delSigma' task
+     implicit none
+     type(modelParam_t), intent(inout) :: sigma, delSigma
+     integer, intent(in) :: comm_current
+     integer :: des_index
+     
+     ! Broadcast command to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                   MPI_PACKED, des_index, FROM_MASTER, comm_local, ierr)
+         end do
+     end if
+     
+     call create_model_param_place_holder(sigma)
+     
+     ! Receive perturbation from master
+     call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
+    &        comm_current,ierr)
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
+    &            comm_local,ierr)
+     endif
+     
+     call copy_ModelParam(delSigma,sigma)
+     call unpack_model_para_values(delSigma)
+     
+     if (associated(sigma_para_vec)) then
+         deallocate(sigma_para_vec)
+     endif
+end subroutine worker_distribute_delsigma
+
+!-----------------------------------------------------------------------------
+subroutine worker_send_eall(per_index)
+! Handle 'Send eAll to Master' task
+     implicit none
+     integer, intent(in) :: per_index
+     
+     worker_job_task%taskid=taskid
+     which_per=per_index
+     call create_eAll_param_place_holder(e0)
+     call Pack_eAll_para_vec(e0)
+     call MPI_SEND(eAll_para_vec, Nbytes, MPI_PACKED, 0, &
+    &         FROM_WORKER, comm_leader, ierr)
+     deallocate(eAll_para_vec)
+end subroutine worker_send_eall
+
+!-----------------------------------------------------------------------------
+subroutine worker_clean_memory(comm_current)
+! Handle 'Clean memory' task
+     implicit none
+     integer, intent(in) :: comm_current
+     integer :: des_index
+     
+     ! Broadcast to local workers and wait for response
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         if (size_local.gt.1) then
+             do des_index=1, size_local-1
+                 call MPI_SEND(worker_job_package,Nbytes, &
+    &                       MPI_PACKED, des_index, FROM_MASTER, &
+    &                       comm_local, ierr)
+                 call MPI_RECV(worker_job_package, Nbytes, &
+    &                        MPI_PACKED,des_index, FROM_WORKER, &
+    &                        comm_local, STATUS, ierr)
+                 call Unpack_worker_job_task
+             end do
+         end if
+     end if
+     
+     worker_job_task%what_to_do='Cleaned Memory and Waiting'
+     worker_job_task%taskid=taskid
+     call Pack_worker_job_task
+     call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
+    &         FROM_WORKER, comm_current, ierr)
+end subroutine worker_clean_memory
+
+!-----------------------------------------------------------------------------
+subroutine worker_regroup(comm_current, time_passed)
+! Handle 'REGROUP' task - redistribute workers among groups
+     implicit none
+     integer, intent(in) :: comm_current
+     double precision, intent(inout) :: time_passed
+     
+     integer :: des_index, cpu_only_ranks
+     integer, pointer, dimension(:) :: group_sizes
+     double precision, pointer, dimension(:) :: time_buff
+     
+     ! Broadcast to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         if (size_local.gt.1) then
+             do des_index=1, size_local-1
+                 call MPI_SEND(worker_job_package,Nbytes, &
+    &                       MPI_PACKED, des_index, FROM_MASTER, &
+    &                       comm_local, ierr)
+             end do
+         end if
+     end if
+     
+     if (rank_local.eq.-1) then
+         time_passed = -1.0
+     end if
+     
+     call gather_runtime(comm_current,time_passed,time_buff)
+     
+     ! Get max periods and polarizations
+     which_per=worker_job_task%per_index
+     which_pol=worker_job_task%pol_index
+     
+     ! Regroup processes
+     call set_group_sizes(which_per,which_pol,comm_world,group_sizes,time_buff)
+     call split_MPI_groups(which_per,which_pol,group_sizes)
+     
+#if defined(CUDA) || defined(HIP)
+     ! Configure GPU settings
+     size_gpuPtr = c_loc(size_gpu)
+     ierr = cudaGetDeviceCount(size_gpuPtr)
+     if ((output_level .gt. 3).and. (rank_local .eq. 0)) then
+         write(6,*) 'number of available GPU devices = ', size_gpu
+     end if
+     
+     if (size_gpu*cpus_per_gpu .ge. size_node) then
+         cpu_only_ranks = 0
+     else
+         cpu_only_ranks = size_node-size_gpu*cpus_per_gpu
+     end if
+#else
+     size_gpu = 0
+     cpu_only_ranks = size_node
+#endif
+     
+     if (rank_node.ge.cpu_only_ranks) then
+         device_id = mod((rank_node - cpu_only_ranks), size_gpu)
+     else
+         device_id = -1
+     endif
+     
+#if defined(CUDA) || defined(HIP)
+     if (device_id .ge. 0) then
+         if ((output_level .gt. 3).and. (rank_local .eq. 0)) then
+             write(6,*) ' hooking up the device #', device_id
+         end if
+         ierr = cudaSetDevice(device_id)
+     endif
+#endif
+
+#if defined(FG) && (defined(CUDA) || defined(HIP))
+     if ((size_local .gt. 1) .and. (ncclIsInit .eq. 0)) then
+         if (rank_local .eq. 0) then
+             ierr = ncclGetUniqueId(uid)
+             if (ierr .ne. 0) then
+                 write(6,*) 'error getting NCCL unique id on device:', ierr
+                 stop
+             endif
+         endif
+         
+         call MPI_BCAST(uid%internal, NCCL_UNIQUE_ID_BYTES, MPI_CHAR, &
+    &            0, comm_local, ierr)
+         rank_nccl = rank_local
+         size_nccl = size_local
+         ierr = ncclCommInitRank(comm_nccl, size_nccl, uid, rank_nccl)
+         
+         if (ierr.ne.0) then
+             write(0,'(A, I4)') 'Error initializing nccl ',ierr
+             stop
+         end if
+         ncclIsInit = 1
+     end if
+#endif
+     
+     time_passed = 0.0
+     if (associated(time_buff)) then
+         deallocate(time_buff)
+     endif
+     if (associated(group_sizes)) then
+         deallocate(group_sizes)
+     endif
+end subroutine worker_regroup
+
+!-----------------------------------------------------------------------------
+subroutine worker_stop(comm_current)
+! Handle 'STOP' task - cleanup and exit
+     implicit none
+     integer, intent(in) :: comm_current
+     integer :: des_index
+     
+     ! Cleanup data structures
+     if (associated(sigma_para_vec)) then
+         deallocate(sigma_para_vec)
+     end if
+     if (associated(e_para_vec)) then
+         deallocate(e_para_vec)
+     end if
+     if (associated(eAll_para_vec)) then
+         deallocate(eAll_para_vec)
+     end if
+     
+     ! Broadcast stop to local workers
+     if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
+         do des_index=1, size_local-1
+             worker_job_task%what_to_do='STOP'
+             worker_job_task%taskid=taskid
+             call Pack_worker_job_task
+             call MPI_SEND(worker_job_package,Nbytes, &
+    &                   MPI_PACKED, des_index, FROM_MASTER, comm_local, ierr)
+             call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED, &
+    &              des_index, FROM_WORKER, comm_local, STATUS, ierr)
+             call Unpack_worker_job_task
+         end do
+     end if
+     
+#if defined(FG) && (defined(CUDA) || defined(HIP))
+     if ((size_local .gt. 1) .and. (ncclIsInit .ne. 0)) then
+         ierr = ncclCommFinalize(comm_nccl)
+         if (ierr .ne. 0 ) then
+             write(6, '(A, I2)') " nccl comm finalize error: ", ierr
+             stop
+         end if
+         ierr = ncclCommDestroy(comm_nccl)
+         if (ierr .ne. 0 ) then
+             write(6, '(A, I2)') " nccl comm destroy error: ", ierr
+             stop
+         end if
+         ncclIsInit = 0
+     endif
+#endif
+     
+     worker_job_task%what_to_do='Job Completed'
+     worker_job_task%taskid=taskid
+     call Pack_worker_job_task
+     call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED, 0, &
+    &        FROM_WORKER, comm_current, ierr)
+end subroutine worker_stop
+
 !###################   Worker_job: High Level Subroutine   ###################
 Subroutine Worker_job(sigma,d)
      ! subroutine for *all* worker jobs -
@@ -1866,759 +2631,90 @@ Subroutine Worker_job(sigma,d)
              ! override - everyone reports back to master
              comm_current = comm_world
              rank_current = rank_world
-             write(6,'(a12,a35)') node_info,                              &
-    &            ' Waiting for a message from Master'
-             write(6,'(a12, a28, f12.6)') node_info,        &
-                 ' total time elapsed (sec): ', time_passed
+             write(6,'(a12,a35)') node_info, ' Waiting for a message from Master'
+             write(6,'(a12, a28, f12.6)') node_info, ' total time elapsed (sec): ', time_passed
          else
              if (rank_local .eq. 0) then
                  ! group leader, reports to master
                  comm_current = comm_leader
                  rank_current = rank_leader
-                 write(6,'(a12,a35)') node_info,                          &
-    &                ' Waiting for a message from Master'
-                 write(6,'(a12, a22, f12.6)') node_info,        &
-    &                ' time elapsed (sec): ', time_passed
+                 write(6,'(a12,a35)') node_info, ' Waiting for a message from Master'
+                 write(6,'(a12, a22, f12.6)') node_info, ' time elapsed (sec): ', time_passed
              elseif (rank_local .gt. 0) then 
                  ! group worker, reports to group leader
                  comm_current = comm_local
                  rank_current = rank_local
-                 write(6,'(a12,a35)') node_info,                          &
-    &        ' Waiting for a message from Leader'
+                 write(6,'(a12,a35)') node_info, ' Waiting for a message from Leader'
              else ! -1
                  ! uninitialized, reports to master first 
                  comm_current = comm_world
                  rank_current = rank_world
-                 write(6,'(a12,a35)') node_info,                          &
-    &        ' Waiting for a message from Someone'
+                 write(6,'(a12,a35)') node_info, ' Waiting for a message from Someone'
              end if
          end if
          ! reset the timer
          previous_time = now
          now = MPI_Wtime()
          ! receive the job info from someone
-         call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED ,0,     &
-    &        FROM_MASTER,comm_current,STATUS, ierr)
-         ! unpack message including what to do and other info. required 
-         ! (i.e per_index_stn_index, ...,etc)
+         call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED ,0, FROM_MASTER,comm_current,STATUS, ierr)
+
          call Unpack_worker_job_task
          write(6,'(a12,a12,a30,a16,i5)') node_info,' MPI TASK [',         &
-    &        trim(worker_job_task%what_to_do),'] received from ',        &
-    &        STATUS(MPI_SOURCE)
-         ! for debug
-         ! write(6,*) 'source = ', MPI_SOURCE
-         ! write(6,*) 'tag = ', MPI_TAG
-         ! write(6,*) 'err = ', MPI_ERROR
-         ! write(6,*) node_info,' MPI INFO [keep soln = ',               &
-         !            (worker_job_task%keep_E_soln), &
-         !            '; several TX = ',worker_job_task%several_Tx,']'
+                trim(worker_job_task%what_to_do),'] received from ',        &
+                STATUS(MPI_SOURCE)
 
-         if (trim(worker_job_task%what_to_do) .eq. 'FORWARD') then
-             ! forward modelling
-             per_index=worker_job_task%per_index
-             pol_index=worker_job_task%pol_index
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes,           &
-    &                    MPI_PACKED, des_index,  FROM_MASTER, comm_local, &
-    &                    ierr)
-                 end do
-             end if
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! leader prepares the basic data structure
-                 call initSolver(per_index,sigma,grid,e0,size_local)
-                 call set_e_soln(pol_index,e0)
-                 call fwdSetup(per_index,e0,b0)
-             else
-                 ! worker just fills in some dummy parameters
-                 iTx = 1
-                 call create_solnVector(grid,iTx,e0)
-                 call set_e_soln(pol_index,e0)
-                 call create_rhsVector(grid,iTx,b0)
-             end if
-             if ((para_method.eq.0).or.(size_local.eq.1)) then
-                 ! you are on your own, bro!
-                 call fwdSolve(per_index,e0,b0,device_id) 
-             else
-#ifdef PETSC
-                 call fwdSolve(per_index,e0,b0,device_id,comm_local) 
-#elif defined(FG)
-                 call fwdSolve(per_index,e0,b0,device_id,comm_local) 
-#else
-                 if (rank_local.eq.0) then
-                     call fwdSolve(per_index,e0,b0,device_id) 
-                 else
-                     write(6,'(a12,a18)') node_info, ' hanging around...'
-                     write(6,*) ' WARNING: more than enough CPU(s) detected'
-                     write(6,*) ' Please consider recompiling with PETSC   '
-                     write(6,*) ' or FG configurations '
-                 endif
-#endif
-             end if
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! leader reports back to master
-                 call create_worker_job_task_place_holder 
-                 worker_job_task%taskid=rank_current
-                 call Pack_worker_job_task
-                 call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
-    &                FROM_WORKER, comm_current, ierr)
-                 ! Create e0_temp package (one Period and one Polarization) 
-                 ! and send it to the master
-                 which_pol=1
-                 call create_e_param_place_holder(e0) 
-                 call Pack_e_para_vec(e0)
-                 call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
-    &                FROM_WORKER, comm_current, ierr) 
-             end if
-             ! so long!
-             call reset_e_soln(e0)
-             now = MPI_Wtime()
-             time_passed =  now - previous_time
-             previous_time = now
+         select case (trim(worker_job_task%what_to_do))
+            case ('FORWARD')
+                per_index=worker_job_task%per_index
+                pol_index=worker_job_task%pol_index
+                call worker_forward(sigma, d, per_index, pol_index, &
+                                            comm_current, rank_current, time_passed)
 
-         elseif (trim(worker_job_task%what_to_do) .eq. 'COMPUTE_J') then
-             ! compute (explicit) J
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes,           &
-    &                    MPI_PACKED, des_index,  FROM_MASTER, comm_local, &
-    &                    ierr)
-                 end do
-             end if
-             per_index=worker_job_task%per_index
-             stn_index=worker_job_task%stn_index
-             dt_index=worker_job_task%data_type_index
-             dt=worker_job_task%data_type
-             nComp = d%d(per_index)%data(dt_index)%nComp           
-             isComplex = d%d(per_index)%data(dt_index)%isComplex
-   
-             if (isComplex) then
-             !   data are complex; one sensitivity calculation can be
-             !   used for both real and imaginary parts
-                 if (mod(nComp,2).ne.0) then
-                     call errStop('for complex data # of components must  &
-    &                    be even in calcJ')
-                 endif
-                 nFunc = nComp/2
-             else
-             !   data are treated as real: full sensitivity computation is
-             !   required  for each component
-                 nFunc = nComp
-             endif
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! only leader allocates basic sensitivity structure
-                 allocate(Jreal(nFunc),STAT=istat)
-                 allocate(Jimag(nFunc),STAT=istat)
-                 ! allocate and initialize sensitivity values
-                 do iFunc = 1,nFunc
-                     ! this makes a copy of modelParam, then zeroes it
-                     Jreal(iFunc) = sigma
-                     call zero(Jreal(iFunc))
-                     Jimag(iFunc) = sigma
-                     call zero(Jimag(iFunc))
-                 enddo
-             end if
-             ! initialize solver  
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! leader prepares the basic data structure
-                 call initSolver(per_index,sigma,grid,e0,size_local,e,comb)
-                 call get_nPol_MPI(e0)
-             else
-                 ! worker just fills in some dummy parameters
-                 iTx = 1
-                 call create_solnVector(grid,iTx,e0)
-                 call set_e_soln(pol_index,e0)
-                 call create_rhsVector(grid,iTx,comb)
-             end if
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then !leader
-                 write(6,'(a12,a18,i5,a12)') node_info,' Start Receiving ',&
-    &                orginal_nPol, ' from Master'
-                 do ipol=1,nPol_MPI 
-                     which_pol=ipol
-                     call create_e_param_place_holder(e0)
-                     call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0,      &
-    &                    FROM_MASTER,comm_current, STATUS, ierr)
-                     call Unpack_e_para_vec(e0)
-                 end do
-                 write(6,'(a12,a18,i5,a12)') node_info,' Finished Receiving '&
-    &                , orginal_nPol, ' from Master'
-                 allocate(L(nFunc),STAT=istat)
-                 allocate(Qreal(nFunc),STAT=istat)
-                 allocate(Qimag(nFunc),STAT=istat)
-                 do iFunc=1,nFunc
-                     call create_sparseVector(e0%grid,per_index,L(iFunc))
-                 end do
-                 ! Initialize only those grid elements on the leader that 
-                 ! are used in EMfieldInterp
-                 ! (obviously a quick patch, needs to be fixed in a major way)
-                 ! A.Kelbert 2018-01-28
-                 Call EdgeLength(e0%grid, l_E)
-                 Call FaceArea(e0%grid, S_F)
-                 ! compute linearized data functional(s) : L
-                 !call Lrows(e0,sigma,dt,stn_index,L)
-                 ! 2022.10.06, Liu Zhongyin, Add Azimuth
-                 call Lrows(e0,sigma,dt,stn_index,orient,L)
-                 ! compute linearized data functional(s) : Q
-                 call Qrows(e0,sigma,dt,stn_index,Qzero,Qreal,Qimag)
-                 ! clean up the grid elements stored in GridCalc on the 
-                 ! leader node
-                 call deall_rvector(l_E)
-                 call deall_rvector(S_F) 
-             end if
-             ! loop over functionals  (e.g., for 2D TE/TM impedances 
-             ! nFunc = 1)
-             do iFunc = 1,nFunc
-                 ! solve transpose problem for each of nFunc functionals
-                 call zero_rhsVector(comb)
-                 if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                     call add_sparseVrhsV(C_ONE,L(iFunc),comb)
-                 end if
-                 if ((para_method.eq.0).or.(size_local.eq.1)) then
-                     ! you are on your own, tovarishch
-                     call sensSolve(per_index,TRN,e,comb,device_id)
-                 else
-#ifdef PETSC
-                   call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
-#elif defined(FG)
-                   call sensSolve(per_index,TRN,e,comb,device_id,comm_local)
-#else
-                   if (rank_local.eq.0) then
-                     call sensSolve(per_index,TRN,e,comb,device_id)
-                   else
-                     write(6,'(a12,a18)') node_info, ' hanging around...'
-                     write(6,*) ' WARNING: more than enough CPU(s) detected'
-                     write(6,*) ' Please consider recompiling with PETSC   '
-                     write(6,*) ' or FG configurations '
-                   endif
-#endif
-                 end if
-                 if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                     ! multiply by P^T and add the rows of Q
-                     call PmultT(e0,sigma,e,Jreal(iFunc),Jimag(iFunc))
-                     if (.not. Qzero) then
-                         call scMultAdd(ONE,Qreal(iFunc),Jreal(iFunc))
-                         call scMultAdd(ONE,Qimag(iFunc),Jimag(iFunc))
-                     endif
-                     ! deallocate temporary vectors
-                     call deall_sparseVector(L(iFunc))
-                     call deall_modelParam(Qreal(iFunc))
-                     call deall_modelParam(Qimag(iFunc))
-                 end if
-             enddo  ! iFunc
-             
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! leader do all other calculations
-                 ! deallocate local arrays
-                 deallocate(L,STAT=istat)
-                 deallocate(Qreal,STAT=istat)
-                 deallocate(Qimag,STAT=istat)
-                 ! call Jrows(per_index,dt_index,stn_index,sigma,e0,
-                 ! Jreal,Jimag)        
-                 ! Create worker job package and send it to the master
-                 ! now send the calculated J back to master
-                 call create_worker_job_task_place_holder
-                 worker_job_task%taskid=rank_current
-                 call Pack_worker_job_task
-                 call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
-    &                FROM_WORKER, comm_current, ierr)
-                 do iFunc = 1,nFunc 
-                 ! Create worker model package for Jreal and send it to 
-                 ! the master       
-                     call create_model_param_place_holder(Jreal(iFunc))
-                     call pack_model_para_values(Jreal(iFunc))
-                     call MPI_SEND(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
-    &                    FROM_WORKER, comm_current, ierr)
-                 ! Create worker model  package for Jimag and send it to
-                 ! the master       
-                     call create_model_param_place_holder(Jimag(iFunc))
-                     call pack_model_para_values(Jimag(iFunc))
-                     call MPI_SEND(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
-    &                    FROM_WORKER, comm_current, ierr)
-                 end do    
-             end if
-             ! Das vidania
-             call reset_e_soln(e0)
-             now = MPI_Wtime()
-             time_passed = now - previous_time
-             previous_time = now
-             
-         elseif (trim(worker_job_task%what_to_do) .eq. 'JmultT') then
+            case ('COMPUTE_J')
+                per_index=worker_job_task%per_index
+                pol_index=worker_job_task%pol_index
+                stn_index=worker_job_task%stn_index
+                dt_index=worker_job_task%data_type_index
+                dt=worker_job_task%data_type
+                call worker_compute_j(sigma, d, per_index, pol_index,stn_index, &
+                                            dt_index, dt, comm_current, &
+                                            rank_current, time_passed)
+                
+            case ('JmultT')
+                per_index=worker_job_task%per_index
+                pol_index=worker_job_task%pol_index
+                call worker_jmultt(sigma, d, per_index, pol_index, &
+                                        comm_current, rank_current, time_passed)
+                        
+            case ('Jmult')
+                per_index=worker_job_task%per_index
+                pol_index=worker_job_task%pol_index
+                worker_job_task%taskid=rank_current
+                call worker_jmult(sigma, delSigma, per_index, pol_index, &
+                                        comm_current, rank_current, time_passed)
 
-             ! calculate JmultT (a.k.a. adjoint)
-             per_index=worker_job_task%per_index
-             pol_index=worker_job_task%pol_index
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes,           &
-    &                    MPI_PACKED, des_index,  FROM_MASTER, comm_local, &
-    &                    ierr)
-                 end do
-             end if
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! leader prepares the basic data structure
-                 ! firstly fill some dummy values
-                 iTx = 1
-                 call create_solnVector(grid,iTx,e0)
-                 call get_nPol_MPI(e0)
-                 write(6,'(a12,a18,i5,a12)') node_info,                   &
-    &                ' Start Receiving ' , orginal_nPol, ' from Master'
-                 do ipol=1,nPol_MPI 
-                     which_pol=ipol
-                     call create_e_param_place_holder(e0)
-                     call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0,     &
-    &                    FROM_MASTER,comm_current, STATUS, ierr)
-                     call Unpack_e_para_vec(e0)
-                 end do
-                 call initSolverWithOutE0(per_index,sigma,grid,size_local,&
-                     e,comb)
-                 write(6,'(a12,a18,i5,a12)') node_info,                   &
-    &                ' Finished Receiving ', orginal_nPol, ' from Master'
-                 call LmultT(e0,sigma,d%d(per_index),comb)
-                 call set_e_soln(pol_index,e)
-             else
-                 ! worker just fills in some dummy parameters
-                 iTx = 1
-                 call create_solnVector(grid,iTx,e)
-                 call set_e_soln(pol_index,e)
-                 call create_rhsVector(grid,iTx,comb)
-             end if
+            case ('Distribute nTx')
+                call worker_distribute_ntx(d, comm_current)
+            case ('Distribute Data')
+                call worker_distribute_data(d, comm_current)
+            case ('Distribute eAll')
+                call worker_distribute_eall(d, comm_current)
+            case ('Distribute Model')
+                call worker_distribute_model(sigma, comm_current)
+            case ('Distribute delSigma')
+                call worker_distribute_delsigma(sigma, delSigma, comm_current)
+            case ('Send eAll to Master')
+                per_index=worker_job_task%per_index
+                call worker_send_eall(per_index)
+            case ('Clean memory')
+                call worker_clean_memory(comm_current)
+            case ('REGROUP')
+                call worker_regroup(comm_current, time_passed)
+            case ('STOP')
+                call worker_stop(comm_current)
+                exit
+        end select
 
-             if ((para_method.eq.0).or.(size_local.eq.1)) then
-                 ! you are on your own, amigo!
-                 call sensSolve(per_index,TRN,e,comb,device_id)
-             else
-#ifdef PETSC
-                 call sensSolve(per_index,TRN,e,comb,device_id,comm_local) 
-#elif defined(FG)
-                 call sensSolve(per_index,TRN,e,comb,device_id,comm_local) 
-#else
-                 if (rank_local.eq.0) then 
-                     call sensSolve(per_index,TRN,e,comb,device_id)
-                 else
-                     write(6,'(a12,a18)') node_info, ' hanging around...'
-                     write(6,*) ' WARNING: more than enough CPU(s) detected'
-                     write(6,*) ' Please consider recompiling with PETSC   '
-                     write(6,*) ' or FG configurations '
-                 end if
-#endif
-             end if
-             call reset_e_soln(e)
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then !leader
-                 ! leader reports back to master
-                 call create_worker_job_task_place_holder
-                 worker_job_task%taskid=rank_current
-                 call Pack_worker_job_task
-                 call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
-    &                FROM_WORKER, comm_current, ierr)
-                 which_pol=1
-                 call create_e_param_place_holder(e)
-                 call Pack_e_para_vec(e)
-                 call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
-    &                FROM_WORKER, comm_current, ierr)
-                 !deallocate(e_para_vec,worker_job_package)
-             end if
-             ! hasta la vista!
-             now = MPI_Wtime()
-             time_passed = now - previous_time
-             previous_time = now
-                    
-         elseif (trim(worker_job_task%what_to_do) .eq. 'Jmult') then
-
-             ! calculate Jmult (probably only used in DCG)
-             ! need to test it thoroughly before merging back to stable
-             per_index=worker_job_task%per_index
-             pol_index=worker_job_task%pol_index
-             worker_job_task%taskid=rank_current
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes,           &
-    &                    MPI_PACKED, des_index,  FROM_MASTER, comm_local, &
-    &                    ierr)
-                 end do
-             end if
-
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then
-                 ! leader prepares the basic data structure
-                 call initSolver(per_index,sigma,grid,e0,size_local,e,comb)
-                 write(6,'(a12,a18,i5,a12)') node_info,                  &
-    &                ' Start Receiving    ' , orginal_nPol, ' from Master'
-                 do ipol=1,orginal_nPol 
-                     which_pol=ipol
-                     call create_e_param_place_holder(e0)
-                     call MPI_RECV(e_para_vec, Nbytes, MPI_PACKED, 0,         &
-    &                    FROM_MASTER,comm_current, STATUS, ierr)
-                     call Unpack_e_para_vec(e0)
-                 end do
-                 write(6,'(a12,a18,i5,a12)') node_info,                  &
-    &            ' Finished Receiving ' , orginal_nPol, ' from Master'
-                 call Pmult(e0,sigma,delSigma,comb)
-             else
-                 ! worker just fills in some dummy parameters
-                 iTx = 1
-                 call create_solnVector(grid,iTx,e)
-                 call create_rhsVector(grid,iTx,comb)
-             end if
-             call set_e_soln(pol_index,e)
-             if ((para_method.eq.0).or.(size_local.eq.1)) then
-                 ! you are on your own, aibo!
-                 call sensSolve(per_index,FWD,e,comb,device_id)
-             else
-#ifdef PETSC
-                 call sensSolve(per_index,FWD,e,comb,device_id,comm_local) 
-#elif defined(FG)
-                 call sensSolve(per_index,TRN,e,comb,device_id,comm_local) 
-#else
-                 if (rank_local.eq.0) then
-                     call sensSolve(per_index,FWD,e,comb,device_id)
-                 else 
-                     write(6,'(a12,a18)') node_info, ' hanging around...'
-                     write(6,*) ' WARNING: more than enough CPU(s) detected'
-                     write(6,*) ' Please consider recompiling with PETSC   '
-                     write(6,*) ' or FG configurations '
-                 end if
-#endif
-             end if
-             call reset_e_soln(e)
-
-             if ((rank_local.eq.0) .or. (para_method.eq.0)) then !leader
-                 ! leader reports back to master
-                 call create_worker_job_task_place_holder
-                 call Pack_worker_job_task
-                 call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
-    &                FROM_WORKER, comm_current, ierr)
-                 ! send the results back
-                 which_pol=1
-                 call create_e_param_place_holder(e)
-                 call Pack_e_para_vec(e)
-                 call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0,         &
-    &                FROM_WORKER, comm_current, ierr)
-             end if
-             ! Aba yo!
-             now = MPI_Wtime()
-             time_passed = now - previous_time
-             previous_time = now
-
-         elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute nTx')&
-    &            then
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,&
-    &                    des_index, FROM_MASTER, comm_local, ierr)
-                 end do
-             end if
-             ! get the nTx from master
-             call MPI_BCAST(nTx, 1, MPI_INTEGER, 0, comm_current, ierr)
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! now broadcast nTx to the fellow workers
-                 call MPI_BCAST(nTx, 1, MPI_INTEGER, 0, comm_local, ierr)
-             endif
-             d%nTx=nTx
-         elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute Data')&
-    &            then
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,&
-    &                    des_index, FROM_MASTER, comm_local, ierr)
-                 end do
-             endif
-             call create_data_vec_place_holder(d)
-             ! get the vector from master
-             call MPI_BCAST(data_para_vec, Nbytes, MPI_PACKED, 0,     &
-    &             comm_current,ierr)
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! now broadcast data to the fellow workers
-                 call MPI_BCAST(data_para_vec, Nbytes, MPI_PACKED, 0,     &
-    &                 comm_local,ierr)
-             endif
-             call UnPack_data_para_vec(d)
-             ! clear the packed data vector
-             if (associated(data_para_vec)) then
-                 deallocate(data_para_vec)
-             endif
-              
-         elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute eAll') &
-    &            then
-             ! note that a worker (non-leader in a group) should never get this
-             do iper=1,d%nTx
-                 which_per=iper
-                 call create_eAll_param_place_holder(e0)
-                 call MPI_RECV(eAll_para_vec, Nbytes, MPI_PACKED ,0,  &
-    &                 FROM_MASTER,comm_current, STATUS, ierr)
-                 call Unpack_eAll_para_vec(e0)
-             end do
-             eAll_exist=.true.
-             if (associated(eAll_para_vec)) then
-                 deallocate(eAll_para_vec)
-             endif
-
-         elseif (trim(worker_job_task%what_to_do) .eq. 'Distribute Model')&
-    &            then
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes,             &
-    &                   MPI_PACKED, des_index,  FROM_MASTER, comm_local,  &
-    &                   ierr)
-                 end do
-             endif
-             call create_model_param_place_holder(sigma)
-             ! get the vector from master
-             call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0,     &
-    &            comm_current,ierr)
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! now broadcast data to the fellow workers
-                 call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0,     &
-    &                 comm_local,ierr)
-             end if
-             call unpack_model_para_values(sigma)
-             if (associated(sigma_para_vec)) then
-                 deallocate(sigma_para_vec)
-             endif
-
-         elseif (trim(worker_job_task%what_to_do).eq.'Distribute delSigma')&
-    &            then
-             ! distribute the conductivity pertubation to all procs
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 !passing the command to workers
-                 do des_index=1, size_local-1
-                     call MPI_SEND(worker_job_package,Nbytes,             &
-    &                   MPI_PACKED, des_index,  FROM_MASTER, comm_local,  &
-    &                   ierr)
-                 end do
-             end if
-             call create_model_param_place_holder(sigma)
-             ! get the vector from master
-             call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0,     &
-    &            comm_current,ierr)
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! now broadcast data to the fellow workers
-                 call MPI_BCAST(sigma_para_vec, Nbytes, MPI_PACKED, 0, &
-    &                comm_local,ierr)
-             endif
-             call copy_ModelParam(delSigma,sigma)
-             call unpack_model_para_values(delSigma)
-             if (associated(sigma_para_vec)) then
-                 deallocate(sigma_para_vec)
-             endif
-         elseif (trim(worker_job_task%what_to_do) .eq.                  &
-    &            'Send eAll to Master' ) then
-             !note that a worker (non-leader in a group) should never get this
-             per_index=worker_job_task%per_index
-             worker_job_task%taskid=taskid
-             which_per=per_index
-             call create_eAll_param_place_holder(e0)
-             call Pack_eAll_para_vec(e0)
-             call MPI_SEND(eAll_para_vec, Nbytes, MPI_PACKED, 0,    &
-    &             FROM_WORKER, comm_leader, ierr)
-             deallocate(eAll_para_vec)
-
-         elseif (trim(worker_job_task%what_to_do) .eq. 'Clean memory' ) then
-             ! clean memory before exiting, but wait - it didn't do anything
-             ! useful (except telling the master so)
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 if (size_local.gt.1) then !passing the command to workers
-                     do des_index=1, size_local-1
-                         call MPI_SEND(worker_job_package,Nbytes,         &
-    &                       MPI_PACKED, des_index,  FROM_MASTER,          &    
-    &                       comm_local, ierr)
-                         call MPI_RECV(worker_job_package, Nbytes,        &
-    &                        MPI_PACKED,des_index, FROM_WORKER,           &
-    &                        comm_local, STATUS, ierr)
-                         call Unpack_worker_job_task
-                     end do
-                 end if 
-             end if
-             worker_job_task%what_to_do='Cleaned Memory and Waiting'
-             worker_job_task%taskid=taskid
-             call Pack_worker_job_task
-             call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0,   &
-    &             FROM_WORKER, comm_current, ierr)
-         elseif (trim(worker_job_task%what_to_do) .eq. 'REGROUP') then
-             ! calculate the time between two regroup events
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 if (size_local.gt.1) then !passing the command to workers
-                     do des_index=1, size_local-1
-                         call MPI_SEND(worker_job_package,Nbytes,         &
-    &                       MPI_PACKED, des_index,  FROM_MASTER,          &    
-    &                       comm_local, ierr)
-                     end do
-                 end if 
-             end if
-             if (rank_local.eq.-1) then ! initial run
-                 time_passed = -1.0
-             end if
-             call gather_runtime(comm_current,time_passed,time_buff)
-             ! strangely, the which_per and which_pol stores the maximum
-             ! number of periods and polarizations
-             which_per=worker_job_task%per_index
-             which_pol=worker_job_task%pol_index
-             ! the following commands are always called with comm_world
-             call set_group_sizes(which_per,which_pol,comm_world,group_sizes)
-             call split_MPI_groups(which_per,which_pol,group_sizes)
-             ! for debug
-             ! write(6,*) 'rank_world= ', rank_world, 'rank_local= ', &
-             !     rank_local, 'rank_leader = ', rank_leader
-#if defined(CUDA) || defined(HIP)
-             ! override the gpu setting after each regroup
-             ! this is kind of awkward as even for a "gpu-aware" mpi, 
-             ! the program will NOT be able to tell the gpu number
-             ! here we have to call the cuda libs to get 
-             ! the number of devices
-             ! it should be noted that this only tells you the number of GPUs
-             ! on current machine, i.e. could be different for different 
-             ! physical nodes 
-             size_gpuPtr = c_loc(size_gpu) ! kind of crude here
-             ierr = cudaGetDeviceCount(size_gpuPtr)
-             if ((output_level .gt. 3).and. (rank_local .eq. 0)) then
-                 write(6,*) 'number of available GPU devices = ', size_gpu
-             end if
-             ! see if we have at least one GPU to spare in this group
-             ! note this could be problematic, if the grouping is 
-             ! not based on topology
-             if (size_gpu*cpus_per_gpu .ge. size_node) then
-                 ! everyone can get GPU acceleration
-                 cpu_only_ranks = 0
-             else
-                 cpu_only_ranks = size_node-size_gpu*cpus_per_gpu
-             end if
-             ! currently use cpus_per_gpu cpus for one GPU 
-             ! (hard coded in Declaritiion_MPI.f90)
-             ! i.e. if we have n cpus and m gpus on a physical node
-             ! the last m*cpus_per_gpu cpus will get accelerated by GPU
-#else
-             size_gpu = 0
-             cpu_only_ranks = size_node
-#endif
-             if (rank_node.ge.cpu_only_ranks) then
-                 ! assign the GPU(s) to the last leaders
-                 device_id = mod((rank_node - cpu_only_ranks),&
-     &               size_gpu)
-             else
-                 ! no gpu left, use CPU to calculate
-                 device_id = -1
-             endif
-#if defined(CUDA) || defined(HIP)
-             ! if we have a device to use...
-             if (device_id .ge. 0) then
-                 if ((output_level .gt. 3).and. (rank_local .eq. 0)) then
-                     write(6,*) ' hooking up the device #', device_id
-                 end if
-                 ierr = cudaSetDevice(device_id);
-             endif
-#endif
-#if defined(FG) && (defined(CUDA) || defined(HIP))
-             if ((size_local .gt. 1) .and. (ncclIsInit .eq. 0)) then
-               ! we have enough workers 
-               ! now init the NCCL communicator
-               if (rank_local .eq. 0) then
-                ! leader generating the uniqueId
-                 ierr = ncclGetUniqueId(uid)
-                 if (ierr .ne. 0) then
-                     write(6,*) 'error getting NCCL unique id on device:', ierr
-                     stop
-                 endif
-               endif
-               ! distribute the ID to all workers, using MPI
-               call MPI_BCAST(uid%internal, NCCL_UNIQUE_ID_BYTES, MPI_CHAR, & 
-   &                0, comm_local, ierr)
-               rank_nccl = rank_local
-               size_nccl = size_local
-               ! for debug
-               ! write(6,*) 'uid = ', uid%internal, ' @rank: ', rank_nccl
-               ierr = ncclCommInitRank(comm_nccl, size_nccl, uid, rank_nccl)
-               ! for debug
-               ! write(6,*) 'initializing NCCL communicator... @ ', rank_nccl
-               if (ierr.ne.0) then
-                   write(0,'(A, I4)') 'Error initializing nccl ',ierr
-                   stop
-               end if 
-               ncclIsInit = 1 ! set the flag
-             end if
-#endif
-             ! now reset the timer
-             time_passed = 0.0
-             if (associated(time_buff)) then 
-                 deallocate(time_buff) 
-             endif
-             if (associated(group_sizes)) then 
-                 deallocate(group_sizes) 
-             endif
-         elseif (trim(worker_job_task%what_to_do) .eq. 'STOP' ) then
-             ! clear all the temp packages and stop
-             if (associated(sigma_para_vec)) then
-                 deallocate(sigma_para_vec)
-             end if
-             if (associated(e_para_vec)) then
-                 deallocate(e_para_vec)
-             end if
-             if (associated(eAll_para_vec)) then
-                 deallocate(eAll_para_vec)
-             end if
-             if ((size_local.gt.1).and.(para_method.gt.0).and.          &
-    &            (rank_local.eq.0)) then 
-                 ! group leader passing the command to workers
-                 do des_index=1, size_local-1
-                     worker_job_task%what_to_do='STOP'
-                     worker_job_task%taskid=taskid
-                     call Pack_worker_job_task
-                     call MPI_SEND(worker_job_package,Nbytes,             &
-    &                   MPI_PACKED, des_index,  FROM_MASTER, comm_local, &
-    &                   ierr)
-                     call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED &
-    &                  ,des_index, FROM_WORKER, comm_local, STATUS, ierr)
-                     call Unpack_worker_job_task
-                 end do
-                 ! all workers report finished
-             end if
-#if defined(FG) && (defined(CUDA) || defined(HIP))
-             if ((size_local .gt. 1) .and. (ncclIsInit .ne. 0)) then
-             ! for debug
-             ! write(6,*) 'finalizing NCCL communicator... @ ', rank_nccl
-                 ierr = ncclCommFinalize(comm_nccl) 
-                 if (ierr .ne. 0 ) then
-                     write(6, '(A, I2)') " nccl comm finalize error: ", ierr
-                     stop
-                 end if
-                 ierr = ncclCommDestroy(comm_nccl) 
-                 if (ierr .ne. 0 ) then
-                     write(6, '(A, I2)') " nccl comm destroy error: ", ierr
-                     stop
-                 end if
-                 ncclIsInit = 0 ! set the flag
-             endif
-#endif
-             worker_job_task%what_to_do='Job Completed'
-             worker_job_task%taskid=taskid
-             call Pack_worker_job_task
-             call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED, 0,  &
-    &            FROM_WORKER, comm_current, ierr)
-             exit
-         endif
-         !previous_message=trim(worker_job_task%what_to_do)
-         !write(6,'(a12,a12,a30,a12)') node_info,' MPI TASK [',
-         !trim(worker_job_task%what_to_do),'] successful'
          worker_job_task%what_to_do='Waiting for new message'
      end do
 
