@@ -43,6 +43,5 @@ options for inversion, etc.
    forward_and_inversion
    beyond_the_basics
    installing_deps
-   contributing
    release_log
    citations
