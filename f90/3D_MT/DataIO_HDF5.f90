@@ -206,7 +206,6 @@ subroutine write_data_hdf5(allData, cfile)
     integer (kind=HID_T) :: gid
 
     call ModEM_HDF5_create_file(cfile, H5F_ACC_TRUNC_F, file_id)
-
     call ModEM_HDF5_create_group(file_id, DATA_GROUP, gid)
     call ModEM_HDF5_create_group(file_id, DATA_MT_GROUP, gid)
 
@@ -430,7 +429,7 @@ subroutine write_typelist(file_id, allData)
 
         ! Create the group
         call ModEM_HDF5_create_group(typelist_group_id, datatype_group_name, datatype_group_id)
-        
+
         ! add all attrbitues
         call ModEM_HDF5_add_attr(datatype_group_id, 'longname', trim(typeDict(nDataType) % name))
         call ModEM_HDF5_add_attr(datatype_group_id, 'units', trim(typeDict(nDataType) % units))
@@ -450,9 +449,6 @@ subroutine write_typelist(file_id, allData)
         end if
 
         ! Add the component attribute
-
-        write(0,*) 'WRITING OUT COMPONENTS: ', typeDict(nDataType) % id
-
         call ModEM_HDF5_create_dataspace(rank(typeDict(nDataType) % id), &
                 (/int(typeDict(nDataType) % nComp, kind=HSIZE_T)/), comp_dspace_id)
         call ModEM_HDF5_create_string_type(comp_type_id, len(typeDict(nDataType) % id(1), kind=HSIZE_T))
@@ -581,7 +577,6 @@ subroutine read_data_hdf5(allData, cfile)
     integer (kind=HID_T) :: file_id
 
     write(0,*) 'read_data_hdf5 - start'
-
     call setup_typeDict()
 
     call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)

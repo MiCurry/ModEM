@@ -10,6 +10,8 @@ module Main
   use userctrl
   use ioascii
   use dataio
+  use ModEM_HDF5
+
   implicit none
 
       ! I/O units ... reuse generic read/write units if
@@ -374,8 +376,12 @@ Contains
     call setup_dataIO(data_input_type, data_output_type)
     call setup_modelParamIO(model_input_type, model_output_type)
 
-  end subroutine ModEM_setup_IO
+    if (data_input_type == DATA_FILE_TYPE_HDF5 .or. data_output_type == DATA_FILE_TYPE_HDF5 &
+      .or. model_input_type == HDF5_FILE_TYPE .or. model_output_type == HDF5_FILE_TYPE) then
+        call ModEM_HDF5_init()
+    end if
 
+  end subroutine ModEM_setup_IO
 
   ! ***************************************************************************
   ! * DeallGlobalData deallocates all allocatable data defined globally.

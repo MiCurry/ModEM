@@ -11,6 +11,12 @@ target_sources(${MODEM_EXE}
     PRIVATE ModEM_logger.f90
 )
 
+if (BUILD_HDF5)
+    target_sources(${MODEM_EXE}
+        PRIVATE ModEM_HDF5_routines.f90
+    )
+endif()
+
 if (USE_C_TIMERS)
     target_sources(${MODEM_EXE}
         PRIVATE ModEM_machine_timers.c

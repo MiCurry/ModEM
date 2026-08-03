@@ -50,6 +50,7 @@ subroutine ModEM_HDF5_init()
     ! Initalize HDF5 Interface
     call h5open_f(hdferr)
 
+
     if (hdferr < 0) then
         write(0,*) "ERROR: HDF5 Error on h5open_f (initalization)"
         call h5eprint_f(h5e_default_f, hdferr)
@@ -453,7 +454,7 @@ subroutine ModEM_HDF5_create_string_type(type_id, str_len, hdferr)
 
     raise_error = present(hdferr)
 
-    call h5tcopy_f(H5T_NATIVE_CHARACTER, type_id, hdferr_lcl)
+    call h5tcopy_f(H5T_FORTRAN_S1, type_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -844,7 +845,7 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
         end if
     end if
 
-    call h5tcopy_f(H5T_NATIVE_CHARACTER, atype_id, hdferr_lcl)
+    call h5tcopy_f(H5T_FORTRAN_S1, atype_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -893,7 +894,6 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
             call ModEM_abort()
         end if
     end if
-
 
     ! Close the attribute and the attribute space
     call h5aclose_f(attr_id, hdferr_lcl)
