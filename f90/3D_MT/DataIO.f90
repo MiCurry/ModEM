@@ -51,11 +51,11 @@ module DataIO
         end subroutine read_Z_list
 
 #ifdef HDF5
-        module subroutine read_hdf5_data(allData, cfile)
+        module subroutine read_data_hdf5(allData, cfile)
             implicit none
             character(*), intent(in) :: cfile
             type (dataVectorMTX_t), intent(inout) :: allData
-        end subroutine read_hdf5_data
+        end subroutine read_data_hdf5
 #endif
     end interface
 
@@ -68,11 +68,11 @@ module DataIO
         end subroutine write_z_list
 
 #ifdef HDF5
-        module subroutine write_hdf5_data(allData, cfile)
+        module subroutine write_data_hdf5(allData, cfile)
             implicit none
             character(*), intent(in) :: cfile
             type (dataVectorMTX_t), intent(in) :: allData
-        end subroutine write_hdf5_data
+        end subroutine write_data_hdf5
 #endif
     end interface
 
@@ -150,7 +150,7 @@ subroutine write_dataVectorMTX(allData,cfile)
         case (DATA_FILE_TYPE_HDF5)
             call compiled_with_HDF5_check()
 #ifdef HDF5
-            call write_hdf5_data(allData, cfile)
+            call write_data_hdf5(allData, cfile)
 #endif
         case default
     end select
@@ -171,7 +171,7 @@ subroutine read_dataVectorMTX(allData,cfile)
         case (DATA_FILE_TYPE_HDF5)
             call compiled_with_HDF5_check()
 #ifdef HDF5
-            call read_hdf5_data(allData, cfile)
+            call read_data_hdf5(allData, cfile)
 #endif
         case default
     end select

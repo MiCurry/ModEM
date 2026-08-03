@@ -5,7 +5,6 @@
 submodule (DataIO) DataIO_HDF5
   ! This module contains io routines for reading and writing the data vectors
   ! Version: 3D MT
-#ifdef HDF5
   use hdf5
   use math_constants
   use file_units
@@ -15,8 +14,16 @@ submodule (DataIO) DataIO_HDF5
   use transmitters
   use receivers
   use datatypes
+  use ModEM_HDF5
 
   implicit none
+
+  ! private dictionary of data block info dimension (nTxt,nDt)
+  ! where nTxt = number of all possible transmitter types
+  !       nDt  = number of all possible data types
+  ! number of transmitter types comes from the DICT/txTypes module
+  ! and defines the number of conceptually different types of sources
+  type (data_file_block), pointer, save, dimension(:,:) :: fileInfo
 
   ! we are converting from an "old format" to a "new format"
   ! the only difference being that in the new format, there is
@@ -25,10 +32,31 @@ submodule (DataIO) DataIO_HDF5
   logical :: old_data_file_format = .true.
   integer(HID_T) :: group_id, attr_id, dset_id, dspace_id, atype_id, aspace_id, dtype_id ! file, data set, and dataspace handles
 
+  character(len=*), parameter :: DATA_GRP_NAME = "/Data"
+
+  character(len=*), parameter :: DATA_MT_GRP_NAME = "Data/MT"
+  character(len=*), parameter :: DATA_MT_TXDICT_GRP_NAME = "Data/MT/txdict"
+  character(len=*), parameter :: DATA_SET_PERIODS_NAME = "periods"
+  character(len=*), parameter :: DATA_MT_RXDICT_GRP = "Data/MT/rxdict"
+  character(len=*), parameter :: DATA_MT_TYPELIST_GRP_NAME = 'Data/MT/typelist'
+  character(len=*), parameter :: DATA_MT_DATABLOCK_BASE_NAME = 'Data/MT/datablock'
+
+  character(len=*), parameter :: MT_IMPEDANCE_VAR_NAME = 'Z'
+  character(len=*), parameter :: MT_TIPPER_VAR_NAME = 'T'
+
+  ! A private derived type that will provide record keeping for 
+  ! iterating through datablocks and allow functions to perform processing.
+  type :: datablock_iter_type
+    type(dataVectorMTX_t), pointer :: allData
+    integer (kind=HID_T) :: data_block_itx_gid
+    integer :: iTx
+    integer :: iDt
+  end type
+
 Contains
 
 !**********************************************************************  
- 
+
 !********************************************************************** 
    !Subroutine to open the hdf5 for reading 
 subroutine open_read_hdf5(cfile, file_id)
@@ -37,7 +65,6 @@ subroutine open_read_hdf5(cfile, file_id)
     integer                                 :: hdferr
     logical                                 :: lexist
 
-    CALL h5open_f(hdferr)
     CALL h5fopen_f(cfile, H5F_ACC_RDONLY_F, file_id, hdferr)
 
 end subroutine open_read_hdf5
@@ -70,9 +97,7 @@ subroutine close_hdf5(file_id)
     integer (kind=HID_T), intent(in)                :: file_id
     integer                                 :: hdferr
 
-    ! CALL h5gclose_f(group_id, hdferr)
     CALL h5fclose_f(file_id, hdferr)
-   
 
 end subroutine close_hdf5
 !********************************************************************** 
@@ -169,509 +194,476 @@ function read_hdf5_attr(att_name, d_id) result( att_data)
     
 end function read_hdf5_attr
 
+subroutine write_data_hdf5(allData, cfile)
 
-!********************************************************************** 
-subroutine write_hdf5_txdict(file_id, order)
+    character(len=*), intent(in)                  :: cfile
+    type(dataVectorMTX_t), intent(in)        :: allData
 
-    integer (kind=HID_T), intent(in)                  :: file_id 
-    character(*), intent(in), optional        :: order
+    character(len=*), parameter :: DATA_GROUP = 'Data'
+    character(len=*), parameter :: DATA_MT_GROUP = 'Data/MT'
 
-    ! local
-    INTEGER(HSIZE_T)  :: ndat     ! Number of data points in an array
-    INTEGER(HSIZE_T)  :: attrlen = 100 ! Length of the attribute string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dimsc = 1 ! Scalar or single value string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    INTEGER(HSIZE_T), DIMENSION(2) :: dim2d ! Datasets dimensions for 2D arrays
-    integer           :: hdferr, ii, istat
+    integer (kind=HID_T) :: file_id
+    integer (kind=HID_T) :: gid
 
-    CHARACTER(LEN=14), parameter :: data_mt_txdict_group = "Data/MT/txdict"
-    real(kind=8), allocatable    :: period(:)
-    character(len=100)           :: order_attr
+    call ModEM_HDF5_create_file(cfile, H5F_ACC_TRUNC_F, file_id)
 
+    call ModEM_HDF5_create_group(file_id, DATA_GROUP, gid)
+    call ModEM_HDF5_create_group(file_id, DATA_MT_GROUP, gid)
 
-    ! first create linear data arrays for writing
-    allocate(period(size(txDict)), stat=istat)
-    do ii = 1, size(txDict)
-        period(ii) = txDict(ii)%period
-    end do
-    dim1d(1) = size(txDict)
-    write(0,*) 'Periods: ',period
+    call write_typelist(file_id, allData)
+    call write_datablocks(file_id, allData)
+    call write_txdict(file_id, allData)
+    call write_rxdict(file_id)
 
-    if (present(order)) then
-        order_attr = order
-    else
-        order_attr = 'ascending'
-    end if
+    call ModEM_HDF5_close_file(file_id)
 
-    ! open cfile and create the txdict group
-    !   !Create the groups for the dataset
-    CALL h5gcreate_f(file_id, data_mt_txdict_group, group_id, hdferr)
+end subroutine write_data_hdf5
 
-    ! create attributes
-    CALL write_hdf5_attr('order', order_attr)
+subroutine write_txdict(file_id, allData)
 
-    ! ! write the linear data arrays
-    CALL h5screate_simple_f(1, dim1d, dspace_id, hdferr)
-    CALL h5dcreate_f(group_id, 'periods', H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, period, dim1d, hdferr)
+    implicit none
 
-    ! ! close the data set and data space
-    CALL h5dclose_f(dset_id, hdferr)
-    CALL h5sclose_f(dspace_id, hdferr)
-
-    ! ! deallocate temporary linear arrays
-    deallocate(period, stat=istat)
-
-end subroutine write_hdf5_txdict
-!********************************************************************** 
-subroutine write_hdf5_rxdict(file_id,primary_coords)
-
-    integer (kind=HID_T), intent(in)                  :: file_id
-    character(*), intent(in), optional        :: primary_coords
-
-    ! local
-    INTEGER(HSIZE_T)               :: ndat     ! Number of data points in an array
-    INTEGER(HSIZE_T)               :: attrlen = 100 ! Length of the attribute string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dimsc = 1 ! Scalar or single value string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    INTEGER(HSIZE_T), DIMENSION(2) :: dim2d ! Datasets dimensions for 2D arrays
-    integer                        :: hdferr, ii, istat, rz, k
-    real(8)                        :: lat, lon
-    CHARACTER(5)                   :: codes
-
-    CHARACTER(LEN=18), parameter  :: data_mt_rxdict_group = "Data/MT/rxdict"
-    real(8), allocatable          :: rxdict_elv(:),rxdict_lat(:), rxdict_lon(:)
-
-    real(8), allocatable          :: rxdict_x(:),rxdict_y(:), rxdict_z(:)
-
-    real(8), allocatable          :: rxdict_xyz(:,:)
-    CHARACTER(len=5), allocatable :: rxdict_codes(:) 
-    character(len=100)            :: coord_attr
-
-
-    
-    ! first create linear data arrays for writing
-    rz = size(rxDict) 
-
-    allocate(rxdict_codes(rz), rxdict_elv(rz), rxdict_lat(rz), rxdict_lon(rz), STAT = istat)
-    allocate(rxdict_x(rz), rxdict_y(rz), rxdict_z(rz), STAT = istat)
-    allocate(rxdict_xyz(3,rz), STAT = istat)
-
-    CALL h5gcreate_f(file_id, data_mt_rxdict_group, group_id, hdferr)
-
-    !Assign dimensions for the xyz dataset beacuse it is 2D and everything else in rxdict is 1D
-    dim2d(1) = 3
-    dim2d(2) = rz
-
-    do ii= 1,rz
-        rxdict_elv = rxDict(ii)%x(3)
-        rxdict_codes(ii) = rxDict(ii)%id 
-        rxdict_lat(ii) = rxDict(ii)%x(1)
-        rxdict_lon(ii) = rxDict(ii)%x(2)
-     
-        rxdict_xyz(:,ii) = rxDict(ii)%x
-      
-    end do
-
-    dim1d(1) = size(rxDict)
-   
-    if (present(primary_coords)) then
-        coord_attr = primary_coords
-    else
-        coord_attr = 'latlon'
-    end if
-
-
-    ! create attributes
-    CALL write_hdf5_attr('primarycoords', coord_attr)
-
-
-    CALL h5screate_simple_f(1, dim1d, dspace_id, hdferr)
-
-    ! write the latitude data array
-    CALL h5dcreate_f(group_id, 'lat', H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, rxdict_lat, dim1d, hdferr)
-
-
-    !write longitude array 
-    CALL h5dcreate_f(group_id, 'lon', H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, rxdict_lon, dim1d, hdferr)
-
-
-    !write elevation array 
-    CALL h5dcreate_f(group_id, 'elv', H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, rxdict_elv, dim1d, hdferr)
- 
-    !write codes array 
-    CALL h5tcopy_f(H5T_NATIVE_CHARACTER, atype_id, hdferr) !use atype_id here for character strings 
-    CALL H5tset_size_f(atype_id, int(5, size_t),hdferr)
-    CALL h5dcreate_f(group_id, 'codes', atype_id, dspace_id, dset_id, hdferr)
-    CALL h5dwrite_f(dset_id, atype_id,rxdict_codes, dim1d, hdferr)
-
-    !create new data space for xyz data set that is 2D and write data to dataset 
-    CALL h5screate_simple_f(2, dim2d, dspace_id, hdferr)
-    CALL h5dcreate_f(group_id, 'xyz', H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, rxdict_xyz, dim2d, hdferr)
-
-    !Write the Attributes
-    CALL write_hdf5_attr('angleunits', 'null', dset_id)
-    CALL write_hdf5_attr('falseeasting', 'null', dset_id)
-    CALL write_hdf5_attr('falsenorthing', 'null', dset_id)
-    CALL write_hdf5_attr('fixedorient', 'null', dset_id)
-    CALL write_hdf5_attr('geoid', 'null', dset_id)
-    CALL write_hdf5_attr('maplatlimit', 'null', dset_id)
-    CALL write_hdf5_attr('maplonlimit', 'null', dset_id)
-    CALL write_hdf5_attr('mapprojection', 'null', dset_id)
-    CALL write_hdf5_attr('nparalels', 'null', dset_id)
-    CALL write_hdf5_attr('origin', '45.276, -119.634', dset_id)
-    CALL write_hdf5_attr('scalefactor', 'null', dset_id)
-    CALL write_hdf5_attr('userinfo', 'null', dset_id)
-    CALL write_hdf5_attr('zone', 'null', dset_id)
-
-    ! deallocate temporary linear arrays
-    deallocate(rxdict_codes,rxdict_lat,rxdict_lon,rxdict_elv, stat=istat)
-    deallocate(rxdict_xyz, STAT = istat)
-
-end subroutine write_hdf5_rxdict
-!********************************************************************** 
-subroutine write_hdf5_typelist(file_id, allData)
-    integer (kind=HID_T), intent(in)  :: file_id
-    type(dataVectorMTX_t), intent(in) :: allData
-
-    ! local
-    INTEGER(HSIZE_T)               :: ndat     ! Number of data points in an array
-    INTEGER(HSIZE_T)               :: attrlen = 100 ! Length of the attribute string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dimsc = 1 ! Scalar or single value string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    INTEGER(HSIZE_T), DIMENSION(2) :: dim2d ! Datasets dimensions for 2D arrays
-    INTEGER(HSIZE_T)                :: size_type_t, size_type_z
-    integer                        :: hdferr, ii, istat, iDt, ncomp, k
-    
-    CHARACTER(len=2), allocatable  :: id_t(:) !data array for type components 
-    CHARACTER(len=3), allocatable  :: id_z(:) !data array for type components 
-
-    CHARACTER(LEN=18), parameter :: data_typelist = "Data/MT/typelist"
-    CHARACTER(LEN=19), parameter :: data_typelist_T = "Data/MT/typelist/T"
-    CHARACTER(LEN=19), parameter :: data_typelist_Z = "Data/MT/typelist/Z"
-  
-
-    CALL h5gcreate_f(file_id, data_typelist, group_id, hdferr)
-   
-        WRITE_DATA_TYPE: do k = 1, alldata%d(1)%ndt !all data, d= one datablock to look foir datatypes, ndt =datatypes 
-        iDt = alldata%d(1)%data(k)%datatype
-        ! do iDt = 1,size(typeDict) 
-            select case (iDt)
-                case(Full_Vertical_Components)
-                    
-                    ncomp = typeDict(iDt)%nComp
-                    dim1d = (ncomp/2) ! define the dimensions for the data set using the number of components divided by 2
-                        CALL h5gcreate_f(file_id, data_typelist_T, group_id, hdferr)
-                            ! Write the Attributes
-                        CALL write_hdf5_attr('longname', typeDict(iDt)%name)
-                        CALL write_hdf5_attr('units', typeDict(iDt)%units)
-                        CALL write_hdf5_attr('complex', '1')
-                        CALL write_hdf5_attr('description', 'Vertical Field Transfer Functions(tipper)')
-                        CALL write_hdf5_attr('externalurl', 'http://www.iris.edu/dms/products/emtf/tipper.html')
-                        CALL write_hdf5_attr('input', 'H')
-                        CALL write_hdf5_attr('intention', 'primary data type')
-                        CALL write_hdf5_attr('output', 'H')
-                        CALL write_hdf5_attr('tag', 'tipper')
-                        size_type_t = 2 
-                        CALL h5screate_simple_f(1, dim1d, dspace_id, hdferr)
-                        CALL h5tcopy_f(H5T_FORTRAN_S1, atype_id, hdferr)
-                        CALL H5tset_size_f(atype_id, size_type_t ,hdferr)
-                        CALL h5dcreate_f(group_id, "components", atype_id, dspace_id, dset_id, hdferr)
-
-
-                        allocate(id_t(ncomp/2),STAT=istat)
-                        do ii = 1, ncomp/2
-                            id_t(ii) = typeDict(iDt)%id(ii) ! Had to allocate the components to a new variable in order to not overwrite the first component using h5dwrite
-                           
-                        end do
-                        CALL h5dwrite_f(dset_id, atype_id, id_t, dim1d, hdferr)
-                     
-                        deallocate(id_t,STAT=istat)
-                case(Full_Impedance)
-                    ncomp = typeDict(iDt)%nComp
-                    dim1d = (ncomp/2)
-                        ! FOR TYPELIST Z
-                        CALL h5gcreate_f(file_id, data_typelist_Z, group_id, hdferr) !This creates the Group T under typelists 
-                        !Write the Attributes 
-                        CALL write_hdf5_attr('longname', typeDict(iDt)%name)
-                        CALL write_hdf5_attr('units', typeDict(iDt)%units)
-                        CALL write_hdf5_attr('complex', '1')
-                        CALL write_hdf5_attr('description', 'MT Impdeance')
-                        CALL write_hdf5_attr('externalurl', 'http://www.iris.edu/dms/products/emtf/impedance.ht')
-                        CALL write_hdf5_attr('input', 'H')
-                        CALL write_hdf5_attr('intention', 'primary data type')
-                        CALL write_hdf5_attr('output', 'E')
-                        CALL write_hdf5_attr('tag', 'impedance') 
-                        
-                        size_type_z = 3 
-                        CALL h5screate_simple_f(1, dim1d, dspace_id, hdferr)
-                        CALL h5tcopy_f(H5T_FORTRAN_S1, atype_id, hdferr)
-                        CALL H5tset_size_f(atype_id, size_type_z,hdferr)
-                        CALL h5dcreate_f(group_id, "components", atype_id, dspace_id, dset_id, hdferr)
-
-
-                        allocate(id_z(ncomp/2), STAT=istat)
-                        do ii = 1, ncomp/2
-                            id_z(ii) = typeDict(iDt)%id(ii) ! Had to allocate the components to a new variable in order to not overwrite the first component using h5dwrite
-                            
-                        end do 
-                        CALL h5dwrite_f(dset_id, atype_id, id_z, dim1d, hdferr)
-                       
-                        deallocate(id_z,STAT=istat)
-            end select 
-        end do WRITE_DATA_TYPE
-
-end subroutine write_hdf5_typelist
-
-!********************************************************************** 
-subroutine write_hdf5_datablocks(file_id, allData)
-    integer (kind=HID_T), intent(in)  :: file_id
-    type(dataVectorMTX_t), intent(in) :: allData
-      ! local
-    INTEGER(HSIZE_T)               :: ndat     ! Number of data points in an array
-    INTEGER(HSIZE_T)               :: attrlen = 100 ! Length of the attribute string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dimsc = 1 ! Scalar or single value string
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    INTEGER(HSIZE_T), DIMENSION(2) :: dim2d ! Datasets dimensions for 2D arrays
-    integer                        :: hdferr, ii, istat, iDt, ncomp, iTx, nRx, myint
-
-
-    CHARACTER(LEN=17), PARAMETER :: data_block_group = 'Data/MT/datablock'
-    !DATA BLOCKS NAMES 
-    character(len=27)                :: dblk_num, dbTZ, dblk
-    character(LEN=3), parameter      :: T = "/T"
-    character(len=3), PARAMETER      :: Z = "/Z"
-
-    do iTx= 1, size(alldata%d) !this provides number of data blocks !
-        myint = iTx
-        write(dblk_num, '(a, a1, I0.2)') data_block_group, '.', myint
-        dblk = dblk_num(18:19)
-        CALL h5gcreate_f(file_id, dblk_num, group_id, hdferr)
-
-         ! Create attributes for Datablock Headers
-        CALL h5screate_simple_f(1, dimsc, aspace_id, hdferr)
-        CALL h5tcopy_f(H5T_NATIVE_CHARACTER, atype_id, hdferr)
-        CALL h5tset_size_f(atype_id, int(27, size_t), hdferr)
-
-        !Create dataset attribute.
-        CALL h5acreate_f(group_id, "Tx", atype_id, aspace_id,attr_id, hdferr)
-        CALL h5awrite_f(attr_id, atype_id, dblk, dimsc, hdferr)
-    
-        WRITE_DATA_TYPE: do ii = 1, alldata%d(iTx)%ndt !all data, d=datablocks ndt =datatypes 
-        iDt = alldata%d(iTx)%data(ii)%datatype
-            select case(iDt) !
-                case(Full_Vertical_Components)
-                    ncomp = allData%d(iTx)%data(ii)%nComp
-                    nRx = allData%d(iTx)%data(ii)%nSite
-                    dim2d = (/ncomp,nRx/)
-            
-                    dim1d = (/nRx/)  !set up dimension size ! THIS ALLOWED FOR SETTING DIMENSION SIZE USING A VARIABLE
-                    dbTZ = trim(dblk_num)//trim(T)
-                  
-                    !this is for T standard dev error 
-                    CALL h5gcreate_f(file_id, dbTZ, group_id, hdferr) 
-                    ! Write Attributes for Tipper 
-                    CALL write_hdf5_attr('column', "component")
-                    CALL write_hdf5_attr('row', "Rx")
-                    CALL write_hdf5_attr('comment',  "complex values sorted by real/imag pairs ")
-          
-
-                    ! Write the standard deviation for the Tipper
-                    CALL h5screate_simple_f(2, dim2d, dspace_id, hdferr)
-                    CALL h5dcreate_f(group_id, "std", H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-                    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, allData%d(iTx)%data(ii)%error, dim2d, hdferr) ! this is the correct way to do this 
-                  
-
-                    ! Write Tipper error value 
-                    CALL h5screate_simple_f(2, dim2d, dspace_id, hdferr)
-                    CALL h5dcreate_f(group_id, "value", H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-                    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, allData%d(iTx)%data(ii)%value, dim2d, hdferr)
-            
-
-                    ! create the dataset for tipper index for codes ! 
-                    CALL h5screate_simple_f(1, dim1d, dspace_id, hdferr)
-                    CALL h5dcreate_f(group_id, "irx", H5T_NATIVE_INTEGER, dspace_id, dset_id, hdferr)
-                    CALL h5dwrite_f(dset_id, H5T_NATIVE_INTEGER, allData%d(iTx)%data(ii)%rx, dim1d, hdferr)
-                
-                  
-        
-                case(Full_Impedance)
-                    ncomp = allData%d(iTx)%data(ii)%nComp
-                    nRx = allData%d(iTx)%data(ii)%nSite
-                    dim2d = (/ncomp,nRx/)
-                    dim1d = (/nRx/)  !set up dimension size ! 
-                    dbTZ = trim(dblk_num)//trim(Z)
-             
-                    CALL h5gcreate_f(file_id, dbTZ, group_id, hdferr)
-                  
-                    ! Create attributes for Impedance
-                    CALL write_hdf5_attr('column', 'component')
-                    CALL write_hdf5_attr('row', 'Rx')
-                    CALL write_hdf5_attr('comment',  "complex values sorted by real/imag pairs ")
-
-                    !Write the standard deviation for the Impedance
-                    CALL h5screate_simple_f(2, dim2d, dspace_id, hdferr)
-                    CALL h5dcreate_f(group_id, "std", H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-                    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE, allData%d(iTx)%data(ii)%error, dim2d, hdferr)
-                   
-                    ! Write the error values for Impedance 
-                    CALL h5screate_simple_f(2, dim2d, dspace_id, hdferr)
-                    CALL h5dcreate_f(group_id, "value", H5T_NATIVE_DOUBLE, dspace_id, dset_id, hdferr)
-                    CALL h5dwrite_f(dset_id, H5T_NATIVE_DOUBLE,allData%d(iTx)%data(ii)%value, dim2d, hdferr)
-                    
-
-                    CALL h5screate_simple_f(1, dim1d, dspace_id, hdferr)
-                    CALL h5dcreate_f(group_id, "irx", H5T_NATIVE_INTEGER, dspace_id, dset_id, hdferr)
-                    CALL h5dwrite_f(dset_id, H5T_NATIVE_INTEGER, allData%d(iTx)%data(ii)%rx, dim1d, hdferr)
-                    
-                  
-                end select
-            end do WRITE_DATA_TYPE
-    end do
-
-end subroutine write_hdf5_datablocks
-
-!**********************************************************************
-subroutine read_hdf5_txdict(file_id)
-    integer (kind=HID_T), intent(in) :: file_id 
-
-    CHARACTER(LEN=9), PARAMETER  :: data_group = "Data"
-    CHARACTER(LEN=9), PARAMETER  :: data_mt_group = "Data/MT"
-    CHARACTER(LEN=18), parameter :: data_mt_txdict_group = "Data/MT/txdict"
-
-    ! DATASET DIMENSIONS USED FOR HDF5 
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    INTEGER(HSIZE_T), DIMENSION(2) :: dim2d ! Datasets dimensions for T and Z in datablocks 
-    INTEGER(HSIZE_T), DIMENSION(1) :: dimsc = 1 ! Scalar or single value string
-    ! INTEGER(HSIZE_T)  :: attrlen = 100 
-
-    REAL(KIND=8), DIMENSION(1), allocatable :: rdata(:) !Read data buffer
-    integer                        :: i, hdferr, istat, nTx
-    INTEGER(HSIZE_T)                :: npoints
-   CHARACTER (len=100), Dimension(1) :: att_data !attribute scalar buffer
-    
-    ! ALLOCATE(rdata(size(txDict)))
-  
-    write(0,*) 'Reading Transmitter Dictionary'
-
-    CALL h5gopen_f(file_id, data_mt_txdict_group, group_id, hdferr)
-    CALL h5dopen_f (group_id, "periods", dset_id, hdferr)
-
-    call h5dget_space_f(dset_id, dspace_id, hdferr)
-    call h5sget_simple_extent_npoints_f(dspace_id, npoints, hdferr)
-    write(0,*) 'read ',npoints,' periods from file'
-    
-    !allocate the space for the local variable rdata
-    allocate(rdata(npoints))
-
-    !define the number of elements in the array for set_up txdict 
-    nTx = npoints
-
-    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE,rdata, dim1d, hdferr)
-
-!    att_data = read_hdf5_attr('order') ! change this from subroutine call everywhere
-
-    write(0,*) 'Transmitter Attribute ', att_data
-
-    call setup_txDict(nTx,rdata,2) 
-    call print_txDict()
-    !figure out how to grab nTx from the already written hdf5 dataset
-
-end subroutine read_hdf5_txdict
-
-! !**********************************************************************
-!     !READ HDF5 
-subroutine read_hdf5_rxdict(file_id)
     integer (kind=HID_T), intent(in) :: file_id
- 
-  
-    CHARACTER(LEN=9), PARAMETER  :: data_group = "Data"
-    CHARACTER(LEN=9), PARAMETER  :: data_mt_group = "Data/MT"
-    CHARACTER(LEN=18), parameter :: data_mt_rxdict_group = "Data/MT/rxdict"
-  
-    ! DATASET DIMENSIONS USED FOR HDF5 
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    INTEGER(HSIZE_T), DIMENSION(2) :: dim2d ! Datasets dimensions for T and Z in datablocks 
-    INTEGER(HSIZE_T)               :: npoints
+    type(dataVectorMTX_t), intent(in) :: allData
 
-    REAL(KIND=8), DIMENSION(1), allocatable :: elv(:), lat(:), lon(:) !Read buffers for siteId
-    REAL(KIND=8), DIMENSION(1), allocatable :: siteLocations(:,:) !local variable for storing three comp site locations
-    REAL(KIND=8), DIMENSION(2), allocatable :: r2data(:,:) !Read buffer
-    CHARACTER(len =5), DIMENSION(1), allocatable :: codes_data(:) !Read buffer
-    CHARACTER(len=100), Dimension(1), allocatable :: att_xyz(:)
-    integer                        :: ii, hdferr,rz, istat, nSites, attr_num
-    INTEGER(SIZE_T)                :: size
+    integer (kind=HID_T) :: txdict_h5_gid
+    integer (kind=HID_T) :: periods_dspace_id
+    integer (kind=HID_T) :: periods_dset_id
+    integer :: i
+    integer :: rank
+    integer :: hdferr
 
-    CALL h5gopen_f(file_id, data_mt_rxdict_group, group_id, hdferr)
-   
-    !Open Elevation dataset 
-    CALL h5dopen_f (group_id, "elv", dset_id, hdferr)
+    real (kind=prec), dimension(:), pointer :: periods
 
-    ! get the number of elements, npoints, in reciever dictionary 
-    call h5dget_space_f(dset_id, dspace_id, hdferr)
-    call h5sget_simple_extent_npoints_f(dspace_id, npoints, hdferr)
+    call ModEM_HDF5_create_group(file_id, 'Data/MT/txdict', txdict_h5_gid)
 
-    !Use npoints to allocate the size for all read buffer variables
-    allocate(elv(npoints), lat(npoints), lon(npoints),codes_data(npoints), STAT=istat)
-    allocate(r2data(3, npoints), STAT=istat)
+    ! Write the Periods to the file
+    rank = 1
+    call ModEM_HDF5_create_dataspace(rank, (/size(txDict, kind=HSIZE_T)/), periods_dspace_id)
+    call ModEM_HDF5_create_dataset(txdict_h5_gid, 'periods', H5T_NATIVE_DOUBLE, periods_dspace_id, periods_dset_id)
 
-    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, elv, dim1d, hdferr)
+    allocate(periods(size(txdict)))
 
-    CALL h5dopen_f (group_id, "lat", dset_id, hdferr)
-    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, lat, dim1d, hdferr)
-
-    write(0,*) 'Latitude:', lat
-
-    CALL h5dopen_f (group_id, "lon", dset_id, hdferr)
-    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, lon, dim1d, hdferr)
-
-    write(0,*) 'Longitude:', lon
-
-    CALL h5dopen_f (group_id, "codes", dset_id, hdferr)
-
-    CALL H5Dget_type_f(dset_id, atype_id, hdferr)
-    CALL H5Tget_size_f(atype_id, size, hdferr)
-    CALL H5Tcopy_f(H5T_FORTRAN_S1, atype_id, hdferr)
-    CALL H5Tset_size_f(atype_id, size, hdferr)
-
-    CALL h5dread_f(dset_id, atype_id, codes_data, dim1d, hdferr)
-    write(0,*) 'Reading Codes'
-
-    CALL h5dopen_f (group_id, "xyz", dset_id, hdferr)
-    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, r2data, dim2d, hdferr)
-
-    ! Get the number of attributes from dataset 
-    ! CALL h5Aget_num_attrs_f(dset_id, attr_num, hdferr)
-
-    ! Read attributes and save to a local variable
-    ! allocate(att_xyz(attr_num), STAT = istat)
-    ! att_xyz = [read_hdf5_attr('angleunits', dset_id), read_hdf5_attr('falseeasting', dset_id), read_hdf5_attr('falsenorthing', dset_id), & 
-    !     read_hdf5_attr('fixedorient', dset_id),read_hdf5_attr('geoid', dset_id), read_hdf5_attr('maplatlimit', dset_id),read_hdf5_attr('maplonlimit', dset_id),& 
-    !     read_hdf5_attr('mapprojection', dset_id),read_hdf5_attr('nparalels', dset_id),read_hdf5_attr('origin', dset_id), &
-    !     read_hdf5_attr('scalefactor', dset_id),read_hdf5_attr('userinfo', dset_id),read_hdf5_attr('zone', dset_id)]
-  
-
-     !allocate the space for the local variable rdata
-    allocate(siteLocations(npoints,3),STAT=istat)
-    do ii= 1, npoints
-        siteLocations(ii,3) = elv(ii)
-        siteLocations(ii,2) = lon(ii)
-        siteLocations(ii,1) = lat(ii)
+    do i = 1, size(txDict), 1
+        periods(i) = txDict(i) % period
     end do
+
+    call ModEM_HDF5_write_dataset(periods_dset_id, H5T_NATIVE_DOUBLE, periods)
+
+    call ModEM_HDF5_add_attr(txdict_h5_gid, 'order', 'ascending')
+
+    call ModEM_HDF5_close_dataset(periods_dset_id)
+    call ModEM_HDF5_close_dataspace(periods_dspace_id)
+    call ModEM_HDF5_close_group(txdict_h5_gid)
+
+    deallocate(periods)
+
+end subroutine write_txdict
+
+subroutine write_rxdict(file_id)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: file_id
+
+    integer (kind=HID_T) :: rx_group_id
+    integer (kind=HID_T) :: rx_dspace_id
+    integer (kind=HID_T) :: rx_dset_id
+    integer (kind=HID_T) :: lat_dset_id, lon_dset_id
+    integer (kind=HID_T) :: xyz_dspace_id, xyz_dset_id
+    integer (kind=HID_T) :: elv_dset_id
+    integer (kind=HID_T) :: codes_dset_id
+    integer (kind=HID_T) :: codes_str_typeid
+    integer :: n_recivers
+    integer :: i
+
+    real (kind=prec), pointer :: rxdict_elv(:),rxdict_lat(:), rxdict_lon(:)
+    real (kind=prec), pointer :: rxdict_x(:),rxdict_y(:), rxdict_z(:)
+    real (kind=prec), pointer :: rxdict_xyz(:,:)
     
-    nSites = npoints ! redfine this as int type 4 and not int8
-    call setup_rxDict(nSites,siteLocations,codes_data) 
-    call print_rxDict()
-    deallocate(siteLocations, STAT=istat)
-    deallocate(elv, lat, lon,codes_data, STAT=istat)
-    deallocate(r2data, STAT=istat)
- 
-end subroutine read_hdf5_rxdict
-! !********************************************************************** 
+    character (len=5), pointer, dimension(:) :: rxdict_codes 
+
+    call ModEM_HDF5_create_group(file_id, 'Data/MT/rxdict', rx_group_id)
+
+    n_recivers = size(rxDict)
+   ! allocate(rxdict_codes(n_recivers), rxdict_elv(n_recivers), rxdict_lat(n_recivers), rxdict_lon(n_recivers))
+   ! allocate(rxdict_x(n_recivers), rxdict_y(n_recivers), rxdict_z(n_recivers))
+   ! allocate(rxdict_xyz(3,n_recivers))
+
+   ! do i = 1, n_recivers, 1
+   !     rxdict_elv = rxDict(i)%x(3)
+   !     rxdict_codes(i) = rxDict(i)%id 
+   !     rxdict_lat(i) = rxDict(i)%x(1)
+   !     rxdict_lon(i) = rxDict(i)%x(2)
+   !  
+   !     rxdict_xyz(:,i) = rxDict(i)%x
+   ! end do
+
+    call ModEM_HDF5_create_dataspace(rank(rxDict), (/size(rxDict, kind=HSIZE_T)/), rx_dspace_id)
+
+    ! Latitudes
+    allocate(rxdict_lat(n_recivers))
+    do i = 1, n_recivers, 1
+        rxdict_lat(i) = rxDict(i) % x(1)
+    end do
+
+    call ModEM_HDF5_create_dataset(rx_group_id, 'lat', H5T_NATIVE_DOUBLE, rx_dspace_id, lat_dset_id)
+    call ModEM_HDF5_write_dataset(lat_dset_id, H5T_NATIVE_DOUBLE, rxdict_lat)
+    call ModEM_HDF5_close_dataset(lat_dset_id)
+
+    deallocate(rxdict_lat)
+
+    ! Longitudes
+    allocate(rxdict_lon(n_recivers))
+    do i = 1, n_recivers, 1
+        rxdict_lon(i) = rxDict(i) % x(2)
+    end do
+
+    call ModEM_HDF5_create_dataset(rx_group_id, 'lon', H5T_NATIVE_DOUBLE, rx_dspace_id, lon_dset_id)
+    call ModEM_HDF5_write_dataset(lon_dset_id, H5T_NATIVE_DOUBLE, rxdict_lon) 
+    call ModEM_HDF5_close_dataset(lon_dset_id)
+
+    deallocate(rxdict_lon)
+
+    ! Elevation
+    allocate(rxdict_elv(n_recivers))
+    do i = 1, n_recivers, 1
+        rxdict_elv(i) = rxDict(i)%x(3)
+    end do
+
+    call ModEM_HDF5_create_dataset(rx_group_id, 'elv', H5T_NATIVE_DOUBLE, rx_dspace_id, elv_dset_id)
+    call ModEM_HDF5_write_dataset(elv_dset_id, H5T_NATIVE_DOUBLE, rxdict_elv)
+    call ModEM_HDF5_close_dataset(elv_dset_id)
+
+    deallocate(rxdict_elv)
+
+    ! Station Codes
+    allocate(rxdict_codes(n_recivers))
+    do i = 1, n_recivers, 1
+        rxdict_codes(i) = rxDict(i) % id
+    end do
+
+
+    call ModEM_HDF5_create_string_type(codes_str_typeid, len(rxdict_codes(1), kind=HSIZE_T))
+    call ModEM_HDF5_create_dataset(rx_group_id, 'codes', codes_str_typeid, rx_dspace_id, codes_dset_id)
+    call ModEM_HDF5_write_dataset(codes_dset_id, codes_str_typeid, rxdict_codes)
+    call MoDEM_HDF5_close_dataset(codes_dset_id)
+
+    deallocate(rxdict_codes)
+    
+    ! Close the rx_dspace_id for lat, lon, elv, codes etc...
+    call ModEM_HDF5_close_dataspace(rx_dspace_id)
+
+    ! Cartesian Coordinates
+    allocate(rxdict_xyz(3,n_recivers))
+    do i = 1, n_recivers, 1
+        rxdict_xyz(:,i) = rxDict(i)%x
+    end do
+
+    call ModEM_HDF5_create_dataspace(rank(rxDict_xyz), (/shape(rxdict_xyz, kind=HSIZE_T)/), xyz_dspace_id)
+    call ModEM_HDF5_create_dataset(rx_group_id, 'xyz', H5T_NATIVE_DOUBLE, xyz_dspace_id, xyz_dset_id)
+    call ModEM_HDF5_write_dataset(xyz_dset_id, H5T_NATIVE_DOUBLE, rxdict_xyz)
+    call ModEM_HDF5_close_dataset(xyz_dset_id)
+    call ModEM_HDF5_close_dataspace(xyz_dspace_id)
+
+    deallocate(rxdict_xyz)
+    
+    ! Add Attributes
+    ! TODO: Actually write a correct origin
+    !write(0,*) 'File info Origin: ', 0, 0
+    call ModEM_HDF5_add_attr(rx_group_id, 'origin', (/0.0, 0.0/))
+
+    call ModEM_HDF5_close_group(rx_group_id)
+
+end subroutine write_rxdict
+
+subroutine write_typelist(file_id, allData)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in)  :: file_id
+    type(dataVectorMTX_t), intent(in) :: allData
+
+    character(len=*), parameter :: TYPELIST_GROUP_NAME= "Data/MT/typelist"
+
+    character(len=512) :: datatype_group_name = ""
+
+    character(len=120) :: dtype_long_name
+    character(len=120) :: units
+    character(len=512) :: description
+    character(len=512) :: externalurl
+    character(len=120) :: input
+    character(len=120) :: output
+    character(len=120) :: intention
+    character(len=120) :: tag
+
+    logical :: is_complex
+
+    integer(kind=HID_T) :: typelist_group_id, datatype_group_id, comp_dspace_id, comp_dset_id
+    integer(kind=HID_T) :: comp_type_id
+
+    integer :: nDataType
+
+    call ModEM_HDF5_create_group(file_id, TYPELIST_GROUP_NAME, typelist_group_id)
+
+    do nDataType = 1, allData % d(1) % nDt
+        select case (allData % d(1) % data(nDataType) % dataType)
+            case (Full_Impedance)
+                ! Data name and units are already in the typedict... see 'longname/units' below
+                datatype_group_name = trim('Z')
+                description = 'MT Impedance'
+                externalurl = 'http://www.iris.edu/dms/products/emtf/impedance.html'
+                input = 'H'
+                intention = 'primary data type'
+                output = 'E'
+                tag = 'impedance'
+            case (Full_Vertical_Components)
+                ! Data name and units are already in the typedict... see 'longname/units' below
+                datatype_group_name = trim('T')
+                description = 'Vertical Field Transfer Functions(tipper)'
+                externalurl = 'http://www.iris.edu/dms/products/emtf/tipper.html'
+                input = 'H'
+                intention = 'primary data type'
+                output = 'E'
+                tag = 'tipper'
+        end select
+
+        ! Create the group
+        call ModEM_HDF5_create_group(typelist_group_id, datatype_group_name, datatype_group_id)
+        
+        ! add all attrbitues
+        call ModEM_HDF5_add_attr(datatype_group_id, 'longname', trim(typeDict(nDataType) % name))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'units', trim(typeDict(nDataType) % units))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'description', trim(description))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'externalurl', trim(externalurl))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'input', trim(input))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'output', trim(output))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'intention', trim(intention))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'tag', trim(tag))
+
+        if (typeDict(nDataType) % isComplex) then
+            ! No Boolean values for HDF5
+            call ModEM_HDF5_add_attr(datatype_group_id, 'complex', 1)
+        else 
+            ! No Boolean values for HDF5
+            call ModEM_HDF5_add_attr(datatype_group_id, 'complex', 0)
+        end if
+
+        ! Add the component attribute
+
+        write(0,*) 'WRITING OUT COMPONENTS: ', typeDict(nDataType) % id
+
+        call ModEM_HDF5_create_dataspace(rank(typeDict(nDataType) % id), &
+                (/int(typeDict(nDataType) % nComp, kind=HSIZE_T)/), comp_dspace_id)
+        call ModEM_HDF5_create_string_type(comp_type_id, len(typeDict(nDataType) % id(1), kind=HSIZE_T))
+        call ModEM_HDF5_create_dataset(datatype_group_id, 'components', comp_type_id, comp_dspace_id, comp_dset_id)
+        call ModEM_HDF5_write_dataset(comp_dset_id, comp_type_id, typeDict(nDataType) % id)
+
+        ! Close this datatypes dataset, dataspace and group
+        call ModEM_HDF5_close_dataset(comp_dset_id)
+        call ModEM_HDF5_close_dataspace(comp_dspace_id)
+        call ModEM_HDF5_close_group(datatype_group_id)
+    end do
+
+    call ModEM_HDF5_close_group(typelist_group_id)
+
+end subroutine write_typelist
+
+!********************************************************************** 
+
+subroutine write_datablocks(file_id, allData)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in)  :: file_id
+    type(dataVectorMTX_t), intent(in) :: allData
+
+    integer :: iTx, nDataBlocks
+
+    character(len=*), PARAMETER :: DATA_BLOCK_GROUP_NAME = '/Data/MT/datablock'
+
+    character(len=512) :: datatype_group_name
+
+    character(len=*), parameter :: T = "/T"
+    character(len=*), parameter :: Z = "/Z"
+    character(len=27) :: data_block_iTx_name, dbTZ, dblk
+
+    integer :: nDataType
+    integer (kind=HID_T) :: datablock_group_id, datatype_group_id
+
+
+    do iTx = 1, size(allData % d)
+        write(data_block_iTx_name, '(a, a1, I0.2)') DATA_BLOCK_GROUP_NAME, '.', iTx
+        call ModEM_HDF5_create_group(file_id, data_block_itx_name, datablock_group_id)
+
+        ! Add the transmitter value as an attribute to this datablock
+        call ModEM_HDF5_add_attr(datablock_group_id, 'Tx', txDict(iTx) % period)
+
+        do nDataType = 1, allData % d(iTx) % nDt
+            select case(allData % d (iTx) % data(nDatatype) % dataType)
+                case (Full_Impedance)
+                    datatype_group_name = trim(data_block_iTx_name)//trim(Z)
+                    call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
+                case (Full_Vertical_Components)
+                    datatype_group_name = trim(data_block_iTx_name)//trim(T)
+                    call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
+                case default
+                    call errStop('ModEM_HDF5 cannot write out this datatype yet..')
+            end select
+
+            ! TODO: We probably want these set above in the select case, or 
+            ! just have each data type add it's attributes on its own... for now this is okay
+            call ModEM_HDF5_add_attr(datatype_group_id, 'column', 'component')
+            call ModEM_HDF5_add_attr(datatype_group_id, 'row', 'Rx')
+            call ModEM_HDF5_add_attr(datatype_group_id, 'comment', 'complex values sorted by real/imag pairs')
+            call write_datablock(datatype_group_id, allData % d(iTx) % data(nDataType))
+            call ModEM_HDF5_close_group(datatype_group_id)
+        end do
+
+        call ModEM_HDF5_close_group(datablock_group_id)
+    end do
+
+end subroutine write_datablocks
+
+
+subroutine write_datablock(datablock_group_id, dataBlock)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: datablock_group_id
+    type (dataBlock_t), pointer, intent(in)   :: dataBlock
+
+    integer (kind=HID_T) :: std_dspace_id
+    integer (kind=HID_T) :: std_dset_id
+
+    integer (kind=HID_T) :: value_dspace_id
+    integer (kind=HID_T) :: value_dset_id
+
+    integer (kind=HID_T) :: irx_dspace_id
+    integer (kind=HID_T) :: irx_dset_id
+
+    ! Write standard deviation for impedance
+    call ModEM_HDF5_create_dataspace(rank(dataBlock % error), shape(dataBlock % error, kind=HSIZE_T), std_dspace_id)
+    call ModEM_HDF5_create_dataset(datablock_group_id, "std", H5T_NATIVE_DOUBLE, std_dspace_id, std_dset_id)
+
+    call ModEM_HDF5_write_dataset(std_dset_id, H5T_NATIVE_DOUBLE, dataBlock % error)
+
+    call ModEM_HDF5_close_dataset(std_dset_id)
+    call ModEM_HDF5_close_dataspace(std_dspace_id)
+
+    ! Write error 
+    call ModEM_HDF5_create_dataspace(rank(dataBlock % value), shape(dataBlock % value, kind=HSIZE_T), value_dspace_id)
+    call ModEM_HDF5_create_dataset(datablock_group_id, "value", H5T_NATIVE_DOUBLE, value_dspace_id, value_dset_id)
+
+    call ModEM_HDF5_write_dataset(value_dset_id, H5T_NATIVE_DOUBLE, dataBlock % value)
+
+    call ModEM_HDF5_close_dataset(value_dset_id)
+    call ModEM_HDF5_close_dataspace(value_dspace_id)
+
+    ! Write component data 
+    call ModEM_HDF5_create_dataspace(rank(dataBlock % rx), shape(dataBlock % rx, kind=HSIZE_T), irx_dspace_id)
+    call ModEM_HDF5_create_dataset(datablock_group_id, "irx", H5T_NATIVE_INTEGER, irx_dspace_id, irx_dset_id)
+
+    call ModEM_HDF5_write_dataset(irx_dset_id, H5T_NATIVE_INTEGER, dataBlock % rx)
+
+    call ModEM_HDF5_close_dataset(irx_dset_id)
+    call ModEM_HDF5_close_dataspace(irx_dspace_id)
+
+end subroutine write_datablock
+
+subroutine read_data_hdf5(allData, cfile)
+
+    implicit none
+
+    type(dataVectorMTX_t), intent(inout) :: allData
+    character(*), intent(in) :: cfile
+
+    integer (kind=HID_T) :: file_id
+
+    write(0,*) 'read_data_hdf5 - start'
+
+    call setup_typeDict()
+
+    call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
+
+    write(0,*) 'read_data_hdf5 - 1'
+    call read_txdict(file_id)
+
+    write(0,*) 'read_data_hdf5 - 2'
+    call read_rxdict(file_id)
+
+    write(0,*) 'read_data_hdf5 - 3'
+    call read_typelist(file_id)
+
+    write(0,*) 'read_data_hdf5 - 4'
+    call read_datablocks(file_id, allData)
+
+    write(0,*) 'read_data_hdf5 - 5'
+    call ModEM_HDF5_close_file(file_id)
+
+    write(0,*) 'read_data_hdf5 - 6'
+
+
+end subroutine read_data_hdf5
+
+subroutine read_rxdict(file_id)
+
+    implicit none
+
+    integer (kind=HID_T) :: file_id
+
+    integer (kind=HID_T) :: mt_rx_group_id
+    integer (kind=HID_T) :: elv
+
+    !call ModEM_HDF5_open_group(file_id, , )
+
+end subroutine read_rxdict
+
+subroutine read_typelist(file_id)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: file_id
+
+
+end subroutine read_typelist
+
+
+subroutine read_txdict(file_id)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: file_id
+
+
+    integer (kind=HID_T) :: mt_tx_group_id
+    integer (kind=HID_T) :: periods_dset_id, periods_dspace_id
+
+    integer (kind=HSIZE_T) :: nperiods
+
+    real (kind=prec), dimension(:), allocatable :: periods
+
+    ! Open the MT Tx group
+    call ModEM_HDF5_open_group(file_id, DATA_MT_TXDICT_GRP_NAME, mt_tx_group_id)
+
+    ! Read the periods
+    call ModEM_HDF5_open_dataset(mt_tx_group_id, DATA_SET_PERIODS_NAME, periods_dset_id)
+    call ModEM_HDF5_get_dataspace(periods_dset_id, periods_dspace_id)
+    call ModEM_HDF5_get_dataspace_size(periods_dspace_id, nperiods)
+
+    allocate(periods(nperiods))
+
+    call ModEM_HDF5_read_dataset(periods_dset_id, H5T_NATIVE_DOUBLE, periods)
+    call setup_txDict(int(nPeriods, kind=SP), periods, 2)
+
+    deallocate(periods)
+
+    ! Open the MT Tx period group
+    call ModEM_HDF5_close_dataset(periods_dset_id)
+    call ModEM_HDF5_close_group(mt_tx_group_id)
+
+end subroutine read_txdict
+
 subroutine read_hdf5_typelist(file_id)
     integer (kind=HID_T), intent(in) :: file_id
   
@@ -714,29 +706,12 @@ subroutine read_hdf5_typelist(file_id)
         ! Read attributes and save to a local variable
         allocate(att_T(attr_num), STAT = istat)
         
-     
         att_T = [read_hdf5_attr('complex'), read_hdf5_attr('description'), read_hdf5_attr('externalurl'),read_hdf5_attr('input'),read_hdf5_attr('intention'), &
             read_hdf5_attr('longname'),read_hdf5_attr('output'),read_hdf5_attr('tag'),read_hdf5_attr('units')]
     
         tran_name = att_T(6) 
         !convert transmitter complex from attribute string to logical
         read(att_T(1),'(A1, L1)') tran_comp
-
-    
-        ! ! Now update the relevant entry in typeDict
-        ! typeDict(Full_Vertical_Components)%exists = .true.
-
-        ! ! Here, also update the units, etc with what we just read
-        ! typeDict(Full_Vertical_Components)%name = att_T(2)
-        ! typeDict(Full_Vertical_Components)%abbrev = 'T'
-        ! typeDict(Full_Vertical_Components)%isComplex = tran_comp
-        ! typeDict(Full_Vertical_Components)%tfType    = ImpType(trim(tran_name))
-        ! typeDict(Full_Vertical_Components)%units     = att_T(9)
-        ! typeDict(Full_Vertical_Components)%nComp     = 4
-
-        ! allocate(typeDict(Full_Vertical_Components)%id(2),STAT=istat)
-        ! typeDict(Full_Vertical_Components)%id(1)    = rdata(1)
-        ! typeDict(Full_Vertical_Components)%id(2)    = rdata(2)
         
         deallocate(rdata,STAT=istat)
         deallocate(att_T, STAT = istat)
@@ -793,7 +768,289 @@ subroutine read_hdf5_typelist(file_id)
     end if
     
 end subroutine read_hdf5_typelist
-   
+
+subroutine read_datablocks(file_id, allData)
+
+    use iso_c_binding
+
+    implicit none
+
+    integer (kind=HID_T) :: file_id
+    type(dataVectorMTX_t), intent(inout) :: allData
+
+    character(len=*), parameter :: DATA_BLOCK_GROUP_NAME = '/Data/MT/datablock'
+    character(len=*), parameter :: MT_GROUP_NAME = 'MT'
+    integer (kind=HID_T) :: data_group_id, mt_group_id, data_block_itx_gid
+
+    character(len=512) :: data_block_iTx_name
+    logical :: exists
+
+    integer :: iTx, nTx
+    integer, target :: ndt
+    integer (kind=HSIZE_T) :: idx
+
+    type (c_funptr) :: funptr
+    type (c_ptr) :: ptr
+    integer, target :: ngrps
+    integer :: ret_value, hdferr_lcl
+
+    call ModEM_HDF5_open_group(file_id, DATA_GRP_NAME, data_group_id)
+    !call ModEM_HDF5_does_group_exist(data_group_id, MT_GROUP_NAME, exists)
+    !if (.false.) then
+    !    call errStop("No MT data group '"//trim(MT_GROUP_NAME)//"' in data file!")
+    !end if
+
+    call ModEM_HDF5_open_group(data_group_id, MT_GROUP_NAME, mt_group_id)
+
+    nTx = size(txDict)
+
+    call create_dataVectorMTX(nTx, allData)
+
+    do iTx = 1, nTx
+        write(data_block_iTx_name, '(a, a1, I0.2)') DATA_BLOCK_GROUP_NAME, '.', iTx
+        call ModEM_HDF5_open_group(file_id, data_block_itx_name, data_block_itx_gid)
+
+        call count_number_of_datablocks(data_block_itx_gid, ndt)
+
+        call create_dataVector(ndt, allData % d(iTx))
+        allData % d(iTx) % tx = iTx
+        allData % d(iTx) % txType = MT
+        
+        call data_iterate_datablocks(allData, data_block_itx_gid, iTx)
+
+        allData % d(iTx) % allocated = .true.
+
+        call ModEM_HDF5_close_group(data_block_itx_gid)
+    end do
+
+    allData % allocated = .true.
+
+    call ModEM_HDF5_close_group(mt_group_id)
+    call ModEM_HDF5_close_group(data_group_id)
+
+end subroutine read_datablocks
+
+integer function count_datablock_cb(loc_id, name, info, ndt) bind(c)
+
+    use iso_c_binding, only : c_ptr, c_null_char, c_f_pointer, c_int
+
+    implicit none 
+
+    integer (kind=HID_T), value:: loc_id
+    character(len=1), dimension(1:10) :: name ! must have LEN=1 for bind(C) strings
+    type (c_ptr) :: info
+    integer, volatile :: ndt
+
+    ndt = ndt + 1
+
+    count_datablock_cb = 0_c_int
+
+end function count_datablock_cb
+
+subroutine count_number_of_datablocks(data_block_itx_gid, nDt)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: data_block_itx_gid
+    integer, target, intent(out) :: ndt
+
+    type(c_ptr) :: ptr
+    type(c_funptr) :: funptr
+
+    integer (kind=HSIZE_T) :: idx
+    integer :: hdferr
+    integer :: return_value
+
+    ndt = 0 
+    idx = 0
+
+    ptr = c_loc(ndt)
+    funptr = c_funloc(count_datablock_cb)
+    call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, return_value, hdferr)
+
+end subroutine count_number_of_datablocks
+
+subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
+    ! Iterate though all the datablocks for a transmitter and read them into the allData structure
+    ! To do this, we use the callback function read_datablock_func writen below.
+    !
+    ! We also need to pass information into the read_datablock_func for the functions that
+    ! process specific data types. Thus we can use the datablock_iter_type which will
+    ! contain information needed for those processing functions and contain a pointer to allData.
+
+    use iso_c_binding, only : c_ptr, c_loc, c_funptr
+
+    implicit none
+
+    type (dataVectorMTX_t), target, intent(inout) :: allData
+    integer (kind=HID_T), target, intent(in) :: data_block_itx_gid
+    integer, target, intent(in) :: iTx
+    
+    type (datablock_iter_type), pointer :: datablock_info
+    type (c_ptr) :: ptr
+    type (c_funptr) :: funptr
+
+    integer (kind=HSIZE_T) :: idx
+    integer :: hdferr
+    integer :: return_value
+
+    allocate(datablock_info)
+
+    datablock_info % allData => allData
+    datablock_info % data_block_itx_gid = data_block_itx_gid
+    datablock_info % iTx = iTx
+    datablock_info % iDt = 1
+
+    iDx = 0
+    funptr = c_funloc(read_datablock_func)
+    ptr = c_loc(datablock_info)
+
+    call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, &
+            return_value, hdferr)
+
+    deallocate(datablock_info)
+
+end subroutine data_iterate_datablocks
+
+integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bind(c)
+    ! We need to have this function here so that we can iterate through datablocks.
+    ! data_iterate_datablocks() will use this function as a callback to process
+    ! each datablock.
+
+    use iso_c_binding, only : c_ptr, c_null_char, c_f_pointer
+
+    implicit none
+
+    integer (kind=HID_T), value:: loc_id
+    character(len=1), dimension(1:10) :: name ! must have LEN=1 for bind(C) strings
+    type (c_ptr) :: info
+    type (c_ptr), value :: datablock_info_ptr
+
+    ! Local Variables
+    integer (kind=HID_T) :: block_group_id, parent_id
+    integer :: i
+    integer :: null_pos
+    character(len=10) :: group_name_string, group_name_string_clean
+    type (datablock_iter_type), pointer :: datablock_info
+
+    call c_f_pointer(datablock_info_ptr, datablock_info)
+
+    group_name_string = ''
+
+    parent_id = datablock_info % data_block_itx_gid
+
+    do i = 1, 10
+        group_name_string(i:i) = name(i)(1:1)
+    end do
+
+    null_pos = index(group_name_string, c_null_char)
+
+    group_name_string_clean = group_name_string(1:null_pos-1)
+    call ModEM_HDF5_open_group(parent_id, group_name_string, block_group_id)
+
+    select case(group_name_string_clean)
+        case (trim(MT_IMPEDANCE_VAR_NAME))
+            call process_mt_datablock(block_group_id, datablock_info, ImpType(trim(MT_IMPEDANCE_VAR_NAME)))
+        case (trim(MT_TIPPER_VAR_NAME))
+            call process_mt_datablock(block_group_id, datablock_info, ImpType(trim(MT_TIPPER_VAR_NAME)))
+        case default
+            write(0,*) 'This data type: ', trim(group_name_string), ' cannot yet be processed by ModEMs HDF5 module'
+            write(0,*) 'Skipping it....'
+    end select
+
+    call ModEM_HDF5_close_group(block_group_id)
+
+    datablock_info % iDt = datablock_info % idt + 1
+
+    read_datablock_func = 0 ! Return code - 0 continues to the next iteartion (see H5literate_f
+
+end function read_datablock_func
+
+subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
+
+    implicit none
+
+    integer (kind=HID_T) :: mt_group_id
+    type (datablock_iter_type), pointer, intent(in) :: datablock_info
+    integer, intent(in) :: MT_DATATYPE_NUM
+
+    type(dataVectorMTX_t), pointer :: allData
+    integer :: idt, iTx
+
+    integer :: dataType, nComp, nSite
+    logical :: isComplex
+
+    integer (kind=HID_T) :: std_dset_id, value_dset_id, irx_dset_id
+    integer (kind=HID_T) :: std_dspace_id, value_dspace_id, irx_dspace_id
+
+    integer (kind=HSIZE_T) :: std_size, value_size, irx_size
+
+    integer :: rank
+    integer (kind=HSIZE_T), allocatable :: std_dims(:), std_max_dims(:)
+    integer (kind=HSIZE_T), allocatable :: value_dims(:), value_max_dims(:)
+    integer (kind=HSIZE_T), allocatable :: irx_dims(:), irx_max_dims(:)
+
+    real (kind=prec), dimension(:,:), allocatable :: std, values
+    real (kind=prec), dimension(:), allocatable :: irx
+
+    dataType = MT_DATATYPE_NUM
+    isComplex = typeDict(datatype) % isComplex
+    nComp = typeDict(datatype) % nComp
+
+    allData => datablock_info % allData
+    iTx = datablock_info % iTx
+    idt = datablock_info % idt
+
+    call ModEM_HDF5_open_dataset(mt_group_id, 'std', std_dset_id)
+    call ModEM_HDF5_get_dataspace(std_dset_id, std_dspace_id)
+    call ModEM_HDF5_get_dataspace_dims(std_dspace_id, std_dims, std_max_dims, rank)
+
+    allocate(std(std_dims(1), std_dims(2)))
+    call ModEM_HDF5_read_dataset(std_dset_id, H5T_NATIVE_DOUBLE, std)
+
+    call ModEM_HDF5_close_dataspace(std_dspace_id)
+    call ModEM_HDF5_close_dataset(std_dset_id)
+
+    ! Open 'value'
+    call ModEM_HDF5_open_dataset(mt_group_id, 'value', value_dset_id)
+    call ModEM_HDF5_get_dataspace(value_dset_id, value_dspace_id)
+
+    call ModEM_HDF5_get_dataspace_dims(value_dspace_id, value_dims, value_max_dims, rank)
+
+    allocate(values(value_dims(1), value_dims(2)))
+    call ModEM_HDF5_read_dataset(value_dset_id, H5T_NATIVE_DOUBLE, values)
+
+    call ModEM_HDF5_close_dataspace(value_dspace_id)
+    call ModEM_HDF5_close_dataset(value_dset_id)
+
+    ! Open 'irx'
+    call ModEM_HDF5_open_dataset(mt_group_id, 'irx', irx_dset_id)
+    call ModEM_HDF5_get_dataspace(irx_dset_id, irx_dspace_id)
+
+    call ModEM_HDF5_get_dataspace_dims(irx_dspace_id, irx_dims, irx_max_dims, rank)
+
+    allocate(irx(irx_dims(1)))
+    call ModEM_HDF5_read_dataset(irx_dset_id, H5T_NATIVE_DOUBLE, irx)
+
+    call ModEM_HDF5_close_dataspace(irx_dspace_id)
+    call ModEM_HDF5_close_dataset(irx_dset_id)
+
+    nSite = irx_dims(1)
+
+    call create_datablock(nComp, nSite, allData % d(iTx) % data(iDt), isComplex, .true.)
+
+    allData % d(iTx) % data (idt) % error(:,:) = std
+    allData % d(iTx) % data (idt) % value(:,:) = values
+    allData % d(iTx) % data (idt) % rx(:) = irx
+    allData % d(iTx) % data (idt) % dataType = datatype
+
+    deallocate(std)
+    deallocate(values)
+    deallocate(irx)
+
+end subroutine process_mt_datablock
+
+
 ! ! !**********************************************************************
 subroutine read_hdf5_datablocks(file_id, allData)
     integer (kind=HID_T), intent(in)     :: file_id 
@@ -835,7 +1092,6 @@ subroutine read_hdf5_datablocks(file_id, allData)
     call create_dataVectorMTX(nTx, allData)
 
     do iTx = 1, nTx
-
         ! Name of the data block for this transmitter
         write(padded_i, '(I0.2)') iTx
         datablock_group = datablock//'.'//trim(padded_i)
@@ -897,7 +1153,6 @@ subroutine read_hdf5_datablocks(file_id, allData)
                     allocate(idx_data(dim1d(1)),STAT=istat)
                     CALL h5dread_f(dset_id, H5T_NATIVE_INTEGER, idx_data, dim1d, hdferr)
 
-                    
 
                     call create_dataBlock(nComp, nSite, allData%d(iTx)%data(ii), isComplex, .true.) 
                     allData%d(iTx)%data(ii)%error(:,:) = std
@@ -969,48 +1224,5 @@ subroutine read_hdf5_datablocks(file_id, allData)
     allData%allocated = .true.
 
 end subroutine read_hdf5_datablocks
-
-!**********************************************************************
-module subroutine write_hdf5_data(allData,cfile)
-    character(*), intent(in)                  :: cfile
-    type(dataVectorMTX_t), intent(in)        :: allData
-    integer (kind=HID_T) :: file_id
-
-    ! open HDF5
-    call open_hdf5(cfile, file_id)
-    
-    call write_hdf5_txdict(file_id)
-    call write_hdf5_rxdict(file_id)
-    call write_hdf5_typelist(file_id, allData)
-    call write_hdf5_datablocks(file_id, allData)
-   
-    call close_hdf5(file_id)
-
-end subroutine
-
-! !**********************************************************************
-module subroutine read_hdf5_data(allData, cfile)
-    character(*), intent(in)                  :: cfile
-    type(dataVectorMTX_t), intent(inout)      :: allData
-    integer (kind=HID_T) :: file_id
-
-    ! integer :: nTxt, nDt
-
-    ! open HDF5
-    call open_read_hdf5(cfile, file_id)
-
-    ! Eventually, we will need to the fileInfo if we read HDF5
-    ! data and write out ASCII data.
-    ! nTxt = 5
-    ! nDt = size(typeDict)
-    ! call init_fileInfo(nTxt,nDt)
-
-    call read_hdf5_txdict(file_id)
-    call read_hdf5_rxdict(file_id)
-    call read_hdf5_typelist(file_id)
-    call read_hdf5_datablocks(file_id, allData)
-
-end subroutine read_hdf5_data
-#endif HDF5
 
 end submodule DataIO_HDF5
