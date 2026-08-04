@@ -481,6 +481,32 @@ subroutine ModEM_HDF5_create_string_type(type_id, str_len, hdferr)
 
 end subroutine ModEM_HDF5_create_string_type
 
+subroutine ModEM_HDF5_close_type(type_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: type_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    call h5tclose_f(type_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when closing type in MOdME_HDF5_close_type"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_close_type
+
 subroutine ModEM_HDF5_open_dataset(loc_id, dataset_name, dset_id, hdferr)
 
     implicit none
