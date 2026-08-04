@@ -597,7 +597,7 @@ subroutine ModEM_HDF5_write_dataset_cptr(dset_id, type, buf, hdferr)
 
     integer (kind=HID_T), intent(in) :: dset_id
     integer (kind=HID_T), intent(in) :: type
-    type (c_ptr), intent(in) :: buf
+    type (c_ptr), value :: buf
     integer, optional, intent(out) :: hdferr
 
     logical :: raise_error
@@ -754,7 +754,7 @@ subroutine ModEM_HDF5_read_dataset_cptr(dset_id, type, buf, hdferr)
 
     integer (kind=HID_T), intent(in) :: dset_id
     integer (kind=HID_T), intent(in) :: type
-    type (c_ptr), intent(out) :: buf
+    type (c_ptr), value  :: buf
     integer, optional, intent(out) :: hdferr
 
     logical :: raise_error

@@ -39,7 +39,8 @@ submodule (DataIO) DataIO_HDF5
   character(len=*), parameter :: DATA_SET_PERIODS_NAME = "periods"
   character(len=*), parameter :: DATA_MT_RXDICT_GRP = "Data/MT/rxdict"
   character(len=*), parameter :: DATA_MT_TYPELIST_GRP_NAME = 'Data/MT/typelist'
-  character(len=*), parameter :: DATA_MT_DATABLOCK_BASE_NAME = 'Data/MT/datablock'
+  character(len=*), parameter :: DATA_MT_DATABLOCKS_BASE_NAME = 'Data/MT/datablocks'
+  character(len=*), parameter :: DATA_MT_DATABLOCK_BASE_NAME = 'Data/MT/datablocks/datablock'
 
   character(len=*), parameter :: MT_IMPEDANCE_VAR_NAME = 'Z'
   character(len=*), parameter :: MT_TIPPER_VAR_NAME = 'T'
@@ -342,7 +343,6 @@ subroutine write_rxdict(file_id)
         rxdict_codes(i) = rxDict(i) % id
     end do
 
-
     call ModEM_HDF5_create_string_type(codes_str_typeid, len(rxdict_codes(1), kind=HSIZE_T))
     call ModEM_HDF5_create_dataset(rx_group_id, 'codes', codes_str_typeid, rx_dspace_id, codes_dset_id)
     call ModEM_HDF5_write_dataset(codes_dset_id, codes_str_typeid, rxdict_codes)
@@ -386,7 +386,6 @@ subroutine write_typelist(file_id, allData)
     character(len=*), parameter :: TYPELIST_GROUP_NAME= "Data/MT/typelist"
 
     character(len=512) :: datatype_group_name = ""
-
     character(len=120) :: dtype_long_name
     character(len=120) :: units
     character(len=512) :: description
@@ -478,20 +477,25 @@ subroutine write_datablocks(file_id, allData)
 
     integer :: iTx, nDataBlocks
 
-    character(len=*), PARAMETER :: DATA_BLOCK_GROUP_NAME = '/Data/MT/datablock'
+    character(len=*), PARAMETER :: DATA_BLOCKS_GROUP_NAME = '/Data/MT/datablocks'
+    character(len=*), PARAMETER :: DATA_BLOCK_GROUP_NAME = '/Data/MT/datablocks/datablock'
 
     character(len=512) :: datatype_group_name
 
     character(len=*), parameter :: T = "/T"
     character(len=*), parameter :: Z = "/Z"
-    character(len=27) :: data_block_iTx_name, dbTZ, dblk
+    character(len=512) :: data_block_iTx_name, dbTZ, dblk
 
     integer :: nDataType
-    integer (kind=HID_T) :: datablock_group_id, datatype_group_id
+    integer (kind=HID_T) :: datablocks_group_id, datablock_group_id, datatype_group_id
 
+
+    call ModEM_HDF5_create_group(file_id, DATA_BLOCKS_GROUP_NAME, datablocks_group_id)
+
+    write(0,*) DATA_BLOCKS_GROUP_NAME, ' ', DATA_BLOCK_GROUP_NAME
 
     do iTx = 1, size(allData % d)
-        write(data_block_iTx_name, '(a, a1, I0.2)') DATA_BLOCK_GROUP_NAME, '.', iTx
+        write(data_block_iTx_name, '(a, a1, I0.2)') trim(DATA_BLOCK_GROUP_NAME), '.', iTx
         call ModEM_HDF5_create_group(file_id, data_block_itx_name, datablock_group_id)
 
         ! Add the transmitter value as an attribute to this datablock
@@ -577,28 +581,15 @@ subroutine read_data_hdf5(allData, cfile)
 
     integer (kind=HID_T) :: file_id
 
-    write(0,*) 'read_data_hdf5 - start'
     call setup_typeDict()
-
     call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
 
-    write(0,*) 'read_data_hdf5 - 1'
     call read_txdict(file_id)
-
-    write(0,*) 'read_data_hdf5 - 2'
     call read_rxdict(file_id)
-
-    write(0,*) 'read_data_hdf5 - 3'
     call read_typelist(file_id)
-
-    write(0,*) 'read_data_hdf5 - 4'
     call read_datablocks(file_id, allData)
 
-    write(0,*) 'read_data_hdf5 - 5'
     call ModEM_HDF5_close_file(file_id)
-
-    write(0,*) 'read_data_hdf5 - 6'
-
 
 end subroutine read_data_hdf5
 
@@ -610,8 +601,6 @@ subroutine read_rxdict(file_id)
 
     integer (kind=HID_T) :: mt_rx_group_id
     integer (kind=HID_T) :: elv
-
-    !call ModEM_HDF5_open_group(file_id, , )
 
 end subroutine read_rxdict
 
@@ -640,6 +629,7 @@ subroutine read_txdict(file_id)
     real (kind=prec), dimension(:), allocatable :: periods
 
     ! Open the MT Tx group
+
     call ModEM_HDF5_open_group(file_id, DATA_MT_TXDICT_GRP_NAME, mt_tx_group_id)
 
     ! Read the periods
@@ -654,7 +644,7 @@ subroutine read_txdict(file_id)
 
     deallocate(periods)
 
-    ! Open the MT Tx period group
+    ! CLose the MT Tx period group
     call ModEM_HDF5_close_dataset(periods_dset_id)
     call ModEM_HDF5_close_group(mt_tx_group_id)
 
@@ -774,9 +764,11 @@ subroutine read_datablocks(file_id, allData)
     integer (kind=HID_T) :: file_id
     type(dataVectorMTX_t), intent(inout) :: allData
 
-    character(len=*), parameter :: DATA_BLOCK_GROUP_NAME = '/Data/MT/datablock'
+    character(len=*), parameter :: DATA_BLOCKS_GROUP_NAME = '/Data/MT/datablocks'
+    character(len=*), parameter :: DATA_BLOCK_GROUP_NAME = '/Data/MT/datablocks/datablock'
+
     character(len=*), parameter :: MT_GROUP_NAME = 'MT'
-    integer (kind=HID_T) :: data_group_id, mt_group_id, data_block_itx_gid
+    integer (kind=HID_T) :: data_group_id, mt_group_id, datablocks_group_id, datablock_itx_gid
 
     character(len=512) :: data_block_iTx_name
     logical :: exists
@@ -796,7 +788,8 @@ subroutine read_datablocks(file_id, allData)
     !    call errStop("No MT data group '"//trim(MT_GROUP_NAME)//"' in data file!")
     !end if
 
-    call ModEM_HDF5_open_group(data_group_id, MT_GROUP_NAME, mt_group_id)
+    ! Open
+    call ModEM_HDF5_open_group(data_group_id, MT_GROUP_NAME, datablocks_group_id)
 
     nTx = size(txDict)
 
@@ -804,24 +797,24 @@ subroutine read_datablocks(file_id, allData)
 
     do iTx = 1, nTx
         write(data_block_iTx_name, '(a, a1, I0.2)') DATA_BLOCK_GROUP_NAME, '.', iTx
-        call ModEM_HDF5_open_group(file_id, data_block_itx_name, data_block_itx_gid)
+        call ModEM_HDF5_open_group(file_id, data_block_itx_name, datablock_itx_gid)
 
-        call count_number_of_datablocks(data_block_itx_gid, ndt)
+        call count_number_of_datablocks(datablock_itx_gid, ndt)
 
         call create_dataVector(ndt, allData % d(iTx))
         allData % d(iTx) % tx = iTx
         allData % d(iTx) % txType = MT
         
-        call data_iterate_datablocks(allData, data_block_itx_gid, iTx)
+        call data_iterate_datablocks(allData, datablock_itx_gid, iTx)
 
         allData % d(iTx) % allocated = .true.
 
-        call ModEM_HDF5_close_group(data_block_itx_gid)
+        call ModEM_HDF5_close_group(datablock_itx_gid)
     end do
 
     allData % allocated = .true.
 
-    call ModEM_HDF5_close_group(mt_group_id)
+    call ModEM_HDF5_close_group(datablocks_group_id)
     call ModEM_HDF5_close_group(data_group_id)
 
 end subroutine read_datablocks
