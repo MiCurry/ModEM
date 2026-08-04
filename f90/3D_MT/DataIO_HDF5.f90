@@ -511,7 +511,6 @@ subroutine write_datablocks(file_id, allData)
 
 end subroutine write_datablocks
 
-
 subroutine write_datablock(datablock_group_id, dataBlock)
 
     implicit none
@@ -694,7 +693,7 @@ subroutine read_typelist(file_id)
 
     integer (kind=HID_T), intent(in) :: file_id
 
-
+    ! TODO: Do we need to include this? The typeDict is already hard-coded in ModEM.
 
 end subroutine read_typelist
 
