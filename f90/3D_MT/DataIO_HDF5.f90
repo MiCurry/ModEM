@@ -401,12 +401,14 @@ subroutine write_typelist(file_id, allData)
     integer(kind=HID_T) :: typelist_group_id, datatype_group_id, comp_dspace_id, comp_dset_id
     integer(kind=HID_T) :: comp_type_id
 
-    integer :: nDataType
+    integer :: iDataType, txType
 
     call ModEM_HDF5_create_group(file_id, TYPELIST_GROUP_NAME, typelist_group_id)
 
-    do nDataType = 1, allData % d(1) % nDt
-        select case (allData % d(1) % data(nDataType) % dataType)
+    do iDataType = 1, allData % d(1) % nDt
+        txType = allData % d(1) % data(iDataType) % dataType
+
+        select case (allData % d(1) % data(iDataType) % dataType)
             case (Full_Impedance)
                 ! Data name and units are already in the typedict... see 'longname/units' below
                 datatype_group_name = trim('Z')
@@ -431,8 +433,8 @@ subroutine write_typelist(file_id, allData)
         call ModEM_HDF5_create_group(typelist_group_id, datatype_group_name, datatype_group_id)
 
         ! add all attrbitues
-        call ModEM_HDF5_add_attr(datatype_group_id, 'longname', trim(typeDict(nDataType) % name))
-        call ModEM_HDF5_add_attr(datatype_group_id, 'units', trim(typeDict(nDataType) % units))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'longname', trim(typeDict(txType) % name))
+        call ModEM_HDF5_add_attr(datatype_group_id, 'units', trim(typeDict(txType) % units))
         call ModEM_HDF5_add_attr(datatype_group_id, 'description', trim(description))
         call ModEM_HDF5_add_attr(datatype_group_id, 'externalurl', trim(externalurl))
         call ModEM_HDF5_add_attr(datatype_group_id, 'input', trim(input))
@@ -440,7 +442,7 @@ subroutine write_typelist(file_id, allData)
         call ModEM_HDF5_add_attr(datatype_group_id, 'intention', trim(intention))
         call ModEM_HDF5_add_attr(datatype_group_id, 'tag', trim(tag))
 
-        if (typeDict(nDataType) % isComplex) then
+        if (typeDict(txType) % isComplex) then
             ! No Boolean values for HDF5
             call ModEM_HDF5_add_attr(datatype_group_id, 'complex', 1)
         else 
@@ -449,13 +451,13 @@ subroutine write_typelist(file_id, allData)
         end if
 
         ! Add the component attribute
-        call ModEM_HDF5_create_dataspace(rank(typeDict(nDataType) % id), &
-                (/int(typeDict(nDataType) % nComp, kind=HSIZE_T)/), comp_dspace_id)
-        call ModEM_HDF5_create_string_type(comp_type_id, len(typeDict(nDataType) % id(1), kind=HSIZE_T))
-        call ModEM_HDF5_create_dataset(datatype_group_id, 'components', comp_type_id, comp_dspace_id, comp_dset_id)
-        call ModEM_HDF5_write_dataset(comp_dset_id, comp_type_id, typeDict(nDataType) % id)
+        call ModEM_HDF5_create_dataspace(rank(typeDict(txType) % id), (/size(typeDict(txType) % id, kind=HSIZE_T)/), comp_dspace_id)
+        call ModEM_HDF5_create_string_type(comp_type_id, len(typeDict(txType) % id(1), kind=HSIZE_T))
+        call ModEM_HDF5_create_dataset(datatype_group_id, ' components ', comp_type_id, comp_dspace_id, comp_dset_id)
+        call ModEM_HDF5_write_dataset(comp_dset_id, comp_type_id, typeDict(txType) % id)
 
         ! Close this datatypes dataset, dataspace and group
+        call ModEM_HDF5_close_type(comp_type_id)
         call ModEM_HDF5_close_dataset(comp_dset_id)
         call ModEM_HDF5_close_dataspace(comp_dspace_id)
         call ModEM_HDF5_close_group(datatype_group_id)
@@ -499,16 +501,15 @@ subroutine write_datablocks(file_id, allData)
             select case(allData % d (iTx) % data(nDatatype) % dataType)
                 case (Full_Impedance)
                     datatype_group_name = trim(data_block_iTx_name)//trim(Z)
-                    call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
                 case (Full_Vertical_Components)
                     datatype_group_name = trim(data_block_iTx_name)//trim(T)
-                    call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
                 case default
                     call errStop('ModEM_HDF5 cannot write out this datatype yet..')
             end select
 
             ! TODO: We probably want these set above in the select case, or 
             ! just have each data type add it's attributes on its own... for now this is okay
+            call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
             call ModEM_HDF5_add_attr(datatype_group_id, 'column', 'component')
             call ModEM_HDF5_add_attr(datatype_group_id, 'row', 'Rx')
             call ModEM_HDF5_add_attr(datatype_group_id, 'comment', 'complex values sorted by real/imag pairs')
