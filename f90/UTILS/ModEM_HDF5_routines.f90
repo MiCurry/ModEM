@@ -14,6 +14,7 @@ module ModEM_HDF5
     end interface
 
     interface ModEM_HDF5_read_dataset
+       MODULE PROCEDURE ModEM_HDF5_read_dataset_string
        MODULE PROCEDURE ModEM_HDF5_read_dataset_real_double_1D
        MODULE PROCEDURE ModEM_HDF5_read_dataset_real_double_2D
     end interface
@@ -46,11 +47,8 @@ subroutine ModEM_HDF5_init()
 
     integer :: hdferr
 
-    write(0,*) 'Calling h5open_f'
     ! Initalize HDF5 Interface
     call h5open_f(hdferr)
-
-
     if (hdferr < 0) then
         write(0,*) "ERROR: HDF5 Error on h5open_f (initalization)"
         call h5eprint_f(h5e_default_f, hdferr)
@@ -386,6 +384,33 @@ subroutine ModEM_HDF5_get_dataspace_dims(dspace_id, dims, maxdims, rank, hdferr)
     end if
 
 end subroutine ModEM_HDF5_get_dataspace_dims
+
+subroutine ModEM_HDF5_get_dataset_type(dset_id, type_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer (kind=HID_T), intent(out) :: type_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    call h5dget_type_f(dset_id, type_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when getting dataset type in ModEM_HDF5_get_dataset_type"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_get_dataset_type
 
 subroutine ModEM_HDF5_create_dataspace(rank, dims, dspace_id, hdferr)
 
@@ -777,6 +802,39 @@ subroutine ModEM_HDF5_read_dataset_cptr(dset_id, type, buf, hdferr)
     hdferr = 0
 
 end subroutine ModEM_HDF5_read_dataset_cptr
+
+subroutine ModEM_HDF5_read_dataset_string(dset_id, type, buf, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer (kind=HID_T), intent(in) :: type
+    character(len=*), pointer, dimension(:), intent(out) :: buf
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    raise_error = present(hdferr)
+
+    buf_ptr = c_loc(buf(1))
+    call ModEM_HDF5_read_dataset_cptr(dset_id, type, buf_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when reading dataset set in ModEM_HDF5_read_dataset_string"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_read_dataset_string
 
 subroutine ModEM_HDF5_read_dataset_real_double_1D(dset_id, type, buf, hdferr)
 

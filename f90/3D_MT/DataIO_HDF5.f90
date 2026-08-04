@@ -286,18 +286,6 @@ subroutine write_rxdict(file_id)
     call ModEM_HDF5_create_group(file_id, 'Data/MT/rxdict', rx_group_id)
 
     n_recivers = size(rxDict)
-   ! allocate(rxdict_codes(n_recivers), rxdict_elv(n_recivers), rxdict_lat(n_recivers), rxdict_lon(n_recivers))
-   ! allocate(rxdict_x(n_recivers), rxdict_y(n_recivers), rxdict_z(n_recivers))
-   ! allocate(rxdict_xyz(3,n_recivers))
-
-   ! do i = 1, n_recivers, 1
-   !     rxdict_elv = rxDict(i)%x(3)
-   !     rxdict_codes(i) = rxDict(i)%id 
-   !     rxdict_lat(i) = rxDict(i)%x(1)
-   !     rxdict_lon(i) = rxDict(i)%x(2)
-   !  
-   !     rxdict_xyz(:,i) = rxDict(i)%x
-   ! end do
 
     call ModEM_HDF5_create_dataspace(rank(rxDict), (/size(rxDict, kind=HSIZE_T)/), rx_dspace_id)
 
@@ -489,10 +477,7 @@ subroutine write_datablocks(file_id, allData)
     integer :: nDataType
     integer (kind=HID_T) :: datablocks_group_id, datablock_group_id, datatype_group_id
 
-
     call ModEM_HDF5_create_group(file_id, DATA_BLOCKS_GROUP_NAME, datablocks_group_id)
-
-    write(0,*) DATA_BLOCKS_GROUP_NAME, ' ', DATA_BLOCK_GROUP_NAME
 
     do iTx = 1, size(allData % d)
         write(data_block_iTx_name, '(a, a1, I0.2)') trim(DATA_BLOCK_GROUP_NAME), '.', iTx
@@ -600,7 +585,106 @@ subroutine read_rxdict(file_id)
     integer (kind=HID_T) :: file_id
 
     integer (kind=HID_T) :: mt_rx_group_id
-    integer (kind=HID_T) :: elv
+    integer (kind=HID_T) :: codes_dset_id, codes_dspace_id
+    integer (kind=HID_T) :: codes_str_typeid
+    integer (kind=HID_T) :: elv_dset_id, elv_dspace_id
+    integer (kind=HID_T) :: lat_dset_id, lat_dspace_id
+    integer (kind=HID_T) :: lon_dset_id, lon_dspace_id
+    integer (kind=HID_T) :: xyz_dset_id, xyz_dspace_id
+
+    integer (kind=HID_T) :: nElvs, nlat, nlon, nxyz, nSites
+
+    real (kind=prec), pointer :: rxdict_elv(:), rxdict_lat(:), rxdict_lon(:)
+    real (kind=prec), pointer :: rxdict_xyz(:,:)
+    character (len=5), pointer, dimension(:) :: rxdict_codes
+
+    real (kind=prec), dimension(:,:), allocatable :: siteLocations
+
+    integer :: i
+
+    call ModEM_HDF5_open_group(file_id, DATA_MT_RXDICT_GRP, mt_rx_group_id)
+
+    ! Read the reciver (station) codes from the dataset
+    call ModEM_HDF5_open_dataset(mt_rx_group_id, 'codes', codes_dset_id)
+    call ModEM_HDF5_get_dataspace(codes_dset_id, codes_dspace_id)
+    call ModEM_HDF5_get_dataspace_size(codes_dspace_id, nSites) 
+
+    ! Get the string typeid for the codes dataset
+    call ModEM_HDF5_get_dataset_type(codes_dset_id, codes_str_typeid)
+
+    allocate(rxdict_codes(nSites))
+    call ModEM_HDF5_read_dataset(codes_dset_id, codes_str_typeid, rxdict_codes)
+
+    call ModEM_HDF5_close_dataspace(codes_dspace_id)
+    call ModEM_HDF5_close_dataset(codes_dset_id)
+
+    ! Read elevation 
+    call ModEM_HDF5_open_dataset(mt_rx_group_id, 'elv', elv_dset_id)
+    call ModEM_HDF5_get_dataspace(elv_dset_id, elv_dspace_id)
+    call ModEM_HDF5_get_dataspace_size(elv_dspace_id, nElvs)
+
+    allocate(rxdict_elv(nElvs))
+    call ModEM_HDF5_read_dataset(elv_dset_id, H5T_NATIVE_DOUBLE, rxdict_elv)
+
+    call ModEM_HDF5_close_dataspace(elv_dspace_id)
+    call ModEM_HDF5_close_dataset(elv_dset_id)
+
+    ! Read the lat/lon/xyz datasets
+    call ModEM_HDF5_open_dataset(mt_rx_group_id, 'lat', lat_dset_id)
+    call ModEM_HDF5_get_dataspace(lat_dset_id, lat_dspace_id)
+    call ModEM_HDF5_get_dataspace_size(lat_dspace_id, nlat) 
+
+    allocate(rxdict_lat(nlat))
+    call ModEM_HDF5_read_dataset(lat_dset_id, H5T_NATIVE_DOUBLE, rxdict_lat)
+
+    call ModEM_HDF5_close_dataspace(lat_dspace_id)
+    call ModEM_HDF5_close_dataset(lat_dset_id)
+
+    ! Read longitude
+    call ModEM_HDF5_open_dataset(mt_rx_group_id, 'lon', lon_dset_id)
+    call ModEM_HDF5_get_dataspace(lon_dset_id, lon_dspace_id)
+    call ModEM_HDF5_get_dataspace_size(lon_dspace_id, nlon)
+
+    allocate(rxdict_lon(nlon))
+    call ModEM_HDF5_read_dataset(lon_dset_id, H5T_NATIVE_DOUBLE, rxdict_lon)
+
+    call ModEM_HDF5_close_dataspace(lon_dspace_id)
+    call ModEM_HDF5_close_dataset(lon_dset_id)
+
+    ! Read xyz
+    call ModEM_HDF5_open_dataset(mt_rx_group_id, 'xyz', xyz_dset_id)
+    call ModEM_HDF5_get_dataspace(xyz_dset_id, xyz_dspace_id)
+    call ModEM_HDF5_get_dataspace_size(xyz_dspace_id, nxyz)
+
+    allocate(rxdict_xyz(3,nxyz))
+    call ModEM_HDF5_read_dataset(xyz_dset_id, H5T_NATIVE_DOUBLE, rxdict_xyz)
+
+    call ModEM_HDF5_close_dataspace(xyz_dspace_id)
+    call ModEM_HDF5_close_dataset(xyz_dset_id)
+
+    call ModEM_HDF5_close_group(mt_rx_group_id)
+
+    ! Now Setup RX Dict
+    allocate(siteLocations(3,nSites))
+
+    do i = 1, nSites, 1
+        siteLocations(i, 1) = rxdict_lat(i)
+        siteLocations(i, 2) = rxdict_lon(i)    
+        siteLocations(i, 3) = rxdict_elv(i)
+    end do
+
+    ! Setup rx dict convert nSites to single precision integer for setup_rxDict
+    call setup_rxDict(int(nSites, kind=SP), siteLocations, rxdict_codes)
+
+    if (output_level >= 5) then
+        call print_rxDict()
+    end if
+
+    deallocate(siteLocations)
+    deallocate(rxdict_codes)
+    deallocate(rxdict_elv)
+    deallocate(rxdict_lat)
+    deallocate(rxdict_lon)
 
 end subroutine read_rxdict
 
@@ -609,6 +693,7 @@ subroutine read_typelist(file_id)
     implicit none
 
     integer (kind=HID_T), intent(in) :: file_id
+
 
 
 end subroutine read_typelist
@@ -620,7 +705,6 @@ subroutine read_txdict(file_id)
 
     integer (kind=HID_T), intent(in) :: file_id
 
-
     integer (kind=HID_T) :: mt_tx_group_id
     integer (kind=HID_T) :: periods_dset_id, periods_dspace_id
 
@@ -629,7 +713,6 @@ subroutine read_txdict(file_id)
     real (kind=prec), dimension(:), allocatable :: periods
 
     ! Open the MT Tx group
-
     call ModEM_HDF5_open_group(file_id, DATA_MT_TXDICT_GRP_NAME, mt_tx_group_id)
 
     ! Read the periods
