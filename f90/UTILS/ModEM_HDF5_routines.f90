@@ -305,7 +305,7 @@ subroutine ModEM_HDF5_iterate_group(loc_id, callback_function, hdferr)
     end if
 
 end subroutine ModEM_HDF5_iterate_group
-    
+
 subroutine ModEM_HDF5_get_dataspace(dset_id, dspace_id, hdferr)
 
     implicit none
@@ -670,7 +670,7 @@ subroutine ModEM_HDF5_write_dataset_string(dset_id, type, buf, hdferr)
     integer (kind=HID_T) :: str_type_id
 
     type (c_ptr) :: buf_ptr
-    
+
     buf_ptr = c_loc(buf(1))
 
     call ModEM_HDF5_write_dataset_cptr(dset_id, type, buf_ptr, hdferr_lcl)

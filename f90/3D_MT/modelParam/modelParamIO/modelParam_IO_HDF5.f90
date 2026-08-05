@@ -9,7 +9,7 @@ implicit none
 
 contains
 
-	!******************************************************************
+    !******************************************************************
     module subroutine write_modelParam_hdf5(m,cfile,comment)
     ! opens cfile on unit ioPrm, writes the object of
     ! type modelParam in HDF5/NetCDF4+ format, closes file
@@ -162,14 +162,14 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_add_attr(root_group_id, 'model_primary_coords', 'xy')
     call ModEM_HDF5_add_attr(root_group_id, 'model_rotation_units', 'degrees')
 
-    dim1d(1) = nx   
+    dim1d(1) = nx
     ! write the linear data array for NX
     call ModEM_HDF5_create_dataspace(rank(grid % xCenter), (/size(grid % xCenter, kind=HSIZE_T)/), x_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'x', H5T_NATIVE_DOUBLE, x_dspace_id, x_dset_id)
     call ModEM_HDF5_write_dataset(x_dset_id, H5T_NATIVE_DOUBLE, grid%xCenter)
 
     !write attributes for x dataset
-    call ModEM_HDF5_add_attr(x_dset_id, 'CLASS', 'DIMENSION_SCALE')
+    call ModEM_HDF5_add_attr(x_dset_id, 'CLASS', 'dimension_SCALE')
     call ModEM_HDF5_add_attr(x_dset_id, 'NAME', 'x')
     call ModEM_HDF5_add_attr(x_dset_id, 'long_name', 'Latitude; positive north')
     call ModEM_HDF5_add_attr(x_dset_id, 'standard_name', 'x')
@@ -185,7 +185,7 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_write_dataset(y_dset_id, H5T_NATIVE_DOUBLE, grid%yCenter)
 
     !write attributes for y dataset
-    call ModEM_HDF5_add_attr(y_dset_id, 'CLASS', 'DIMENSION_SCALE')
+    call ModEM_HDF5_add_attr(y_dset_id, 'CLASS', 'dimension_SCALE')
     call ModEM_HDF5_add_attr(y_dset_id, 'NAME', 'y')
     call ModEM_HDF5_add_attr(y_dset_id, 'long_name', 'Latitude; positive east')
     call ModEM_HDF5_add_attr(y_dset_id, 'standard_name', 'y')
@@ -201,7 +201,7 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_write_dataset(z_dset_id, H5T_NATIVE_DOUBLE, grid%zCenter(grid%NzAir+1:NzEarth+grid%NzAir))
 
     !write attributes for z dataset
-    call ModEM_HDF5_add_attr(z_dset_id, 'CLASS', 'DIMENSION_SCALE')
+    call ModEM_HDF5_add_attr(z_dset_id, 'CLASS', 'dimension_SCALE')
     call ModEM_HDF5_add_attr(z_dset_id, 'NAME', 'z')
     call ModEM_HDF5_add_attr(z_dset_id, 'long_name', 'depth below earth surface')
     call ModEM_HDF5_add_attr(z_dset_id, 'positive', 'down')
@@ -225,7 +225,7 @@ subroutine write_gridSpacing_hdf5(file_id, m)
     type(rscalar)                         :: rho,ccond
     character(80)                         :: paramType
 
-    INTEGER(HSIZE_T), DIMENSION(1)        :: dim1d ! Datasets dimensions for 1D arrays
+    integer(HSIZE_T), dimension(1)        :: dim1d ! Datasets dimensions for 1D arrays
     integer                               :: hdferr, istat
     integer                               :: Nx, Ny, NzEarth, i, j, k
     integer (kind=HID_T) :: grid_spacing_group_id
@@ -281,7 +281,7 @@ subroutine write_sigma_hdf5(file_id, m)
     type(rscalar)                         :: rho,ccond
     character(80)                         :: paramType =''
 
-    INTEGER(HSIZE_T), DIMENSION(3)        :: dim3d ! Datasets dimensions for 1D arrays
+    integer(HSIZE_T), dimension(3)        :: dim3d ! Datasets dimensions for 1D arrays
     integer                               :: hdferr, istat
     integer                               :: Nx, Ny, NzEarth, i, j, k
     CHARACTER(LEN=10), parameter :: prop = "log10sigma"
@@ -321,71 +321,69 @@ end subroutine write_sigma_hdf5
 !******************************************************************
 subroutine read_geometry_hdf5(file_id, grid, airlayers)
 
-    integer(kind=HID_T), intent(in)                 :: file_id
-    type (grid_t) , intent(inout)        :: grid
-    type (airLayers_t), intent(inout):: airLayers
+    integer(kind=HID_T), intent(in) :: file_id
+    type (grid_t) , intent(inout) :: grid
+    type (airLayers_t), intent(inout) :: airLayers
 
-    integer                              :: istat
+    integer(kind=HSIZE_T), dimension(1) :: dim1d
 
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    integer           :: hdferr
+    character(80) :: someChar=''
+    character(80) :: paramType=''
+    real(kind=prec), dimension(1), allocatable :: xctr(:)
+    real(kind=prec), dimension(1), allocatable :: yctr(:)
+    real(kind=prec), dimension(1), allocatable :: zctr(:)
 
-    character(80)                           :: someChar='',paramType=''
-    REAL(KIND=8), DIMENSION(1), allocatable :: xctr(:), yctr(:), zctr(:) !Read data buffers for 1D Arrays
-    INTEGER(HSIZE_T)                        :: nx, ny, nz !create memory buffers for X, Y, Z, and sigma to be used for getting the # of elements in each array
-    integer                                 :: grid_x, grid_y, grid_z, NzAir, i, j, k
-    real(8)                                    :: origin_x, origin_y, origin_z
-    real(8)                                    :: origin(3)
+    integer(kind=HSIZE_T) :: nx, ny, nz
+    integer  :: grid_x, grid_y, grid_z, NzAir, i, j, k
+    real(kind=prec) :: origin_x, origin_y, origin_z
+    real(kind=prec) :: origin(3)
 
     integer (kind=HID_T) :: x_dset_id, y_dset_id, z_dset_id
     integer (kind=HID_T) :: x_dspace_id, y_dspace_id, z_dspace_id
 
     integer (kind=HID_T) :: group_id
 
-    !!!!!!!!! READ X DATA !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    ! Open X dataset and get dataspace dimensions
+    ! Read x
     call ModEM_HDF5_open_dataset(file_id, "x", x_dset_id)
-
-    ! The npoints will be a differents size for each dataset
     call ModEM_HDF5_get_dataspace(x_dset_id, x_dspace_id)
     call ModEM_HDF5_get_dataspace_size(x_dspace_id, nx)
-    !allocate the space for the local variable
-    allocate(xctr(nx), STAT = istat)
 
-    ! Read  grid geometries from Hdf5
+    allocate(xctr(nx))
+
     call ModEM_HDF5_read_dataset(x_dset_id, H5T_NATIVE_DOUBLE, xctr)
     call ModEM_HDF5_close_dataset(x_dset_id)
     call ModEM_HDF5_close_dataspace(x_dspace_id)
 
+    ! Read y
     call ModEM_HDF5_open_dataset(file_id, "y", y_dset_id)
-
-    ! The npoints will be a differents size for each dataset
     call ModEM_HDF5_get_dataspace(y_dset_id, y_dspace_id)
     call ModEM_HDF5_get_dataspace_size(y_dspace_id, ny)
 
-    !allocate the space for the local variable
-    allocate(yctr(ny), STAT = istat)
+    allocate(yctr(ny))
 
-    ! Read  grid geometries from Hdf5
     call ModEM_HDF5_read_dataset(y_dset_id, H5T_NATIVE_DOUBLE, yctr)
     call ModEM_HDF5_close_dataset(y_dset_id)
     call ModEM_HDF5_close_dataspace(y_dspace_id)
 
-    !!!!!!!!! READ Z DATA !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    ! Open Z dataset and get dataspace dimensions
+    ! Read z
     call ModEM_HDF5_open_dataset(file_id, "z", z_dset_id)
-
-    ! The npoints will be a differents size for each dataset
     call ModEM_HDF5_get_dataspace(z_dset_id, z_dspace_id)
     call ModEM_HDF5_get_dataspace_size(z_dspace_id, nz)
 
-    !allocate the space for the local variable
-    allocate(zctr(nz), STAT = istat)
+    allocate(zctr(nz))
 
-    ! Read  grid geometries from Hdf5
     call ModEM_HDF5_read_dataset(z_dset_id, H5T_NATIVE_DOUBLE, zctr)
     call ModEM_HDF5_close_dataset(z_dset_id)
     call ModEM_HDF5_close_dataspace(z_dspace_id)
+
+    ! Read origin attributes
+    call ModEM_HDF5_open_group(file_id, "/", group_id)
+
+    call ModEM_HDF5_read_attr(group_id, 'model_origin_x', origin_x)
+    call ModEM_HDF5_read_attr(group_id, 'model_origin_y', origin_y)
+    call ModEM_HDF5_read_attr(group_id, 'model_origin_z', origin_z)
+
+    call ModEM_HDF5_close_group(group_id)
 
     ! Setup grid
     grid_x = nx
@@ -394,15 +392,6 @@ subroutine read_geometry_hdf5(file_id, grid, airlayers)
     nzAir = airLayers%Nz
     call create_grid(grid_x, grid_y, nzAir, grid_z, grid)
 
-    !Read Origin Attributes from the file to be used in X, Y, and Z centers
-    call ModEM_HDF5_open_group(file_id, "/", group_id)
-    
-    call ModEM_HDF5_read_attr(group_id, 'model_origin_x', origin_x)
-    call ModEM_HDF5_read_attr(group_id, 'model_origin_y', origin_y)
-    call ModEM_HDF5_read_attr(group_id, 'model_origin_z', origin_z)
-    
-    call ModEM_HDF5_close_group(group_id)
-
     origin(1) = -origin_x
     origin(2) = -origin_y
     origin(3) = -origin_z
@@ -410,23 +399,25 @@ subroutine read_geometry_hdf5(file_id, grid, airlayers)
     origin_x = -origin_x
     origin_y = -origin_y
     origin_z = -origin_z
+
     ! x = origin(1)
     do  i = 1, size(xctr)
         grid%dx(i) = 2*(xctr(i)-origin_x)
         origin_x = origin_x + grid%dx(i)
     end do
+
     ! y= origin(2)
     do  i = 1, size(yctr)
         grid%dy(i) = 2*(yctr(i)-origin_y)
         origin_y = origin_y + grid%dy(i)
     end do
+
     ! z = origin(3)
     do  i = 1, size(zctr)
         grid%dz(nzAir + i) = 2*(zctr(i)-origin_z)
         origin_z = origin_z + grid%dz(nzAir +i)
     end do
 
-    ! Finally, insert correct air layers in the grid and run setup_grid
     call setup_airlayers(airLayers,grid)
     call update_airlayers(grid,nzAir,airLayers%Dz)
     call setup_grid(grid, origin)
