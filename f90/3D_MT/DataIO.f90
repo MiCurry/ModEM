@@ -176,6 +176,12 @@ subroutine read_dataVectorMTX(allData,cfile)
         case default
     end select
 
+    write(0,*) 'Data nTx: ', allData % nTx
+    write(0,*) 'Data dataType: ', allData % d(1) % data(1) % dataType
+    write(0,*) 'Data std: ', allData % d(1) % data(1) % error
+    write(0,*) 'Data values: ', allData % d(1) % data(1) % value    
+    write(0,*) 'Data rx: ', allData % d(1) % data(1) % rx
+
 end subroutine read_dataVectorMTX
 
 subroutine deall_dataFileInfo()

@@ -595,12 +595,15 @@ subroutine read_txdict(file_id)
 
     call ModEM_HDF5_read_dataset(periods_dset_id, H5T_NATIVE_DOUBLE, periods)
     call setup_txDict(int(nPeriods, kind=SP), periods, 2)
+    write(0,*) "After reading txDict from HDF5 file, the periods are: "
+    call print_txDict()
 
     deallocate(periods)
 
     ! CLose the MT Tx period group
     call ModEM_HDF5_close_dataset(periods_dset_id)
     call ModEM_HDF5_close_group(mt_tx_group_id)
+
 
 end subroutine read_txdict
 
@@ -786,6 +789,8 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
     group_name_string_clean = group_name_string(1:null_pos-1)
     call ModEM_HDF5_open_group(parent_id, group_name_string, block_group_id)
 
+    write(0,*) 'Processing datablock: ', trim(group_name_string_clean), ' for transmitter: ', datablock_info % iTx, ' and data type: ', trim(group_name_string_clean)
+
     select case(group_name_string_clean)
         case (trim(MT_IMPEDANCE_VAR_NAME))
             call process_mt_datablock(block_group_id, datablock_info, ImpType(trim(MT_IMPEDANCE_VAR_NAME)))
@@ -800,7 +805,7 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
 
     datablock_info % iDt = datablock_info % idt + 1
 
-    read_datablock_func = 0 ! Return code - 0 continues to the next iteartion (see H5literate_f
+    read_datablock_func = 0 ! Return code - 0 continues to the next iteartion (see H5literate_f)
 
 end function read_datablock_func
 
