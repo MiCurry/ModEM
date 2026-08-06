@@ -10,16 +10,15 @@ implicit none
 contains
 
 	!******************************************************************
-    module subroutine write_modelParam_hdf5(m,cfile,comment)
+module subroutine write_modelParam_hdf5(m,cfile,comment)
     ! opens cfile on unit ioPrm, writes the object of
     ! type modelParam in HDF5/NetCDF4+ format, closes file
 
-    type(modelParam_t), intent(in)    :: m
+    type(modelParam_t), intent(in)	   :: m
     character(*), intent(in)             :: cfile
     character(*), intent(in), optional   :: comment
 
     integer(kind=HID_T) :: file_id
-    integer :: hdferr
 
     if (gridCoords .eq. SPHERICAL) then
         write(0,*) 'Will be writing the model output in spherical HDF5 format...'
@@ -47,20 +46,18 @@ module subroutine read_modelParam_hdf5(grid,airLayers,m,cfile)
     ! for setting the pointer to the grid in the modelParam
 
     type(grid_t), target, intent(inout)  :: grid
-    type(airLayers_t), intent(inout)       :: airLayers
-    type(modelParam_t), intent(out)        :: m
+    type(airLayers_t), intent(inout)	   :: airLayers
+    type(modelParam_t), intent(out)	   :: m
     character(*), intent(in)             :: cfile
-    integer                              :: istat
+    integer		                       :: istat
     ! local variables
 
     integer(kind=HID_T)                 :: file_id
-    type(rscalar)                        :: rho, ccond
-    character(80)                        :: someChar='',paramType=''
-    integer                              :: Nx, Ny, NzEarth, NzAir, i, j, k
+    type(rscalar)                        :: ccond
+    character(80)                        :: paramType=''
+    integer                              :: Nx, Ny, NzEarth, i, j, k
 
-    integer (kind=HSIZE_T), dimension(3) :: dim3d ! Datasets dimensions for 3D arrays
-    real (kind=8), dimension(3), allocatable :: Sigma(:,:,:) ! Read data buffer for 3D Arrays
-    integer           :: hdferr
+    real (kind=8), dimension(:,:,:), allocatable :: Sigma ! Read data buffer for 3D Arrays
 
     integer (kind=HID_T) :: dset_id, dspace_id
 
@@ -132,14 +129,11 @@ end subroutine read_modelParam_hdf5
 subroutine write_geometry_hdf5(file_id, m)
 
     integer(kind=HID_T), intent(in)      :: file_id
-    type(modelParam_t), intent(in)       :: m
+    type(modelParam_t), intent(in)	     :: m
 
-    integer                              :: istat
     type(grid_t)                         :: grid
-    integer                              :: Nx, Ny, NzEarth,  i, j, k
+    integer                              :: Nx, Ny, NzEarth
 
-    integer (kind=prec), dimension(1) :: dim1d ! Datasets dimensions for 1D arrays
-    integer :: hdferr, ii
     integer (kind=HID_T) :: root_group_id
     integer (kind=HID_T) :: x_dspace_id, y_dspace_id, z_dspace_id
     integer (kind=HID_T) :: x_dset_id, y_dset_id, z_dset_id
@@ -162,7 +156,6 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_add_attr(root_group_id, 'model_primary_coords', 'xy')
     call ModEM_HDF5_add_attr(root_group_id, 'model_rotation_units', 'degrees')
 
-    dim1d(1) = nx   
     ! write the linear data array for NX
     call ModEM_HDF5_create_dataspace(rank(grid % xCenter), (/size(grid % xCenter, kind=HSIZE_T)/), x_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'x', H5T_NATIVE_DOUBLE, x_dspace_id, x_dset_id)
@@ -179,7 +172,6 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_close_dataspace(x_dspace_id)
 
     ! write the linear data array for NY
-    dim1d(1) = ny
     call ModEM_HDF5_create_dataspace(1, (/int(ny, kind=HSIZE_T)/), y_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'y', H5T_NATIVE_DOUBLE, y_dspace_id, y_dset_id)
     call ModEM_HDF5_write_dataset(y_dset_id, H5T_NATIVE_DOUBLE, grid%yCenter)
@@ -195,7 +187,6 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_close_dataspace(y_dspace_id)
 
     ! write the linear data array for NZ
-    dim1d(1) = nzEarth
     call ModEM_HDF5_create_dataspace(1, (/int(nzEarth, kind=HSIZE_T)/), z_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'z', H5T_NATIVE_DOUBLE, z_dspace_id, z_dset_id)
     call ModEM_HDF5_write_dataset(z_dset_id, H5T_NATIVE_DOUBLE, grid%zCenter(grid%NzAir+1:NzEarth+grid%NzAir))
@@ -217,19 +208,16 @@ end subroutine write_geometry_hdf5
 !write code for the nodes
 subroutine write_gridSpacing_hdf5(file_id, m)
 
-    integer(kind=HID_T), intent(in)      :: file_id
-    type(modelParam_t), intent(in)       :: m
+    integer(kind=HID_T), intent(in)       :: file_id 
+    type(modelParam_t), intent(in)	      :: m
 
     ! local variables
     type(grid_t)                          :: grid
-    type(rscalar)                         :: rho,ccond
+    type(rscalar)                         :: ccond
     character(80)                         :: paramType
 
-    INTEGER(HSIZE_T), DIMENSION(1)        :: dim1d ! Datasets dimensions for 1D arrays
-    integer                               :: hdferr, istat
-    integer                               :: Nx, Ny, NzEarth, i, j, k
+    integer                               :: Nx, Ny, NzEarth
     integer (kind=HID_T) :: grid_spacing_group_id
-    integer (kind=HID_T) :: group_id, dset_id, dspace_id
     integer (kind=HID_T) :: dx_dset_id, dy_dset_id, dz_dset_id
     integer (kind=HID_T) :: dx_dspace_id, dy_dspace_id, dz_dspace_id 
 
@@ -243,7 +231,6 @@ subroutine write_gridSpacing_hdf5(file_id, m)
     NzEarth=grid%nz - grid%nzAir
 
     call ModEM_HDF5_create_group(file_id, "GridSpacing", grid_spacing_group_id)
-    dim1d(1) = Nx
     ! write the linear data array for NodesX
     call ModEM_HDF5_create_dataspace(rank(grid % dx), (/size(grid % dx, kind=HSIZE_T)/), dx_dspace_id)
     call ModEM_HDF5_create_dataset(grid_spacing_group_id, 'Dx', H5T_NATIVE_DOUBLE, dx_dspace_id, dx_dset_id)
@@ -252,7 +239,6 @@ subroutine write_gridSpacing_hdf5(file_id, m)
     call ModEM_HDF5_close_dataspace(dx_dspace_id)
 
     ! write the linear data array for NodesY
-    dim1d(1) = Ny
     call ModEM_HDF5_create_dataspace(rank(grid % dy), (/size(grid % dy, kind=HSIZE_T)/), dy_dspace_id)
     call ModEM_HDF5_create_dataset(grid_spacing_group_id, 'Dy', H5T_NATIVE_DOUBLE, dy_dspace_id, dy_dset_id)
     call ModEM_HDF5_write_dataset(dy_dset_id, H5T_NATIVE_DOUBLE, grid % dy)
@@ -260,7 +246,6 @@ subroutine write_gridSpacing_hdf5(file_id, m)
     call ModEM_HDF5_close_dataspace(dy_dspace_id)
 
     ! write the linear data array for NodesZ
-    dim1d(1) = NzEarth
     call ModEM_HDF5_create_dataspace(rank(grid % dz), (/size(grid % dz, kind=HSIZE_T)/), dz_dspace_id)
     call ModEM_HDF5_create_dataset(grid_spacing_group_id, 'Dz', H5T_NATIVE_DOUBLE, dz_dspace_id, dz_dset_id)
     call ModEM_HDF5_write_dataset(dz_dset_id, H5T_NATIVE_DOUBLE, grid % dz)
@@ -273,21 +258,17 @@ end subroutine write_gridSpacing_hdf5
 !******************************************************************
 subroutine write_sigma_hdf5(file_id, m)
     integer(kind=HID_T), intent(in)                  :: file_id
-    type(modelParam_t), intent(in)      :: m
+    type(modelParam_t), intent(in)	     :: m
 
     ! local variables
-    type(custom_att), target        :: attr_obj
     type(grid_t)                          :: grid
-    type(rscalar)                         :: rho,ccond
+    type(rscalar)                         :: ccond
     character(80)                         :: paramType =''
 
-    INTEGER(HSIZE_T), DIMENSION(3)        :: dim3d ! Datasets dimensions for 1D arrays
-    integer                               :: hdferr, istat
-    integer                               :: Nx, Ny, NzEarth, i, j, k
+    integer                               :: Nx, Ny, NzEarth
     CHARACTER(LEN=10), parameter :: prop = "log10sigma"
-    real(kind=prec)                       :: origin_x
 
-    integer (kind=HID_T) :: sigma_group_id, sigma_dset_id, sigma_dspace_id
+    integer (kind=HID_T) :: sigma_dset_id, sigma_dspace_id
 
     ! Convert modelParam to natural log or log10 for output
     !paramType = userParamType
@@ -298,10 +279,6 @@ subroutine write_sigma_hdf5(file_id, m)
     Nx=grid%nx !this defines the length of the data array
     Ny=grid%ny
     NzEarth=grid%nz - grid%nzAir
-
-    dim3d(1) = Ny
-    dim3d(2) = Nx
-    dim3d(3) = NzEarth
 
     call ModEM_HDF5_create_dataspace(3, (/int(Ny, kind=HSIZE_T), int(Nx, kind=HSIZE_T), int(NzEarth, kind=HSIZE_T)/), sigma_dspace_id)
     call ModEM_HDF5_create_dataset(file_id, prop, H5T_NATIVE_DOUBLE, sigma_dspace_id, sigma_dset_id)
@@ -322,20 +299,16 @@ end subroutine write_sigma_hdf5
 subroutine read_geometry_hdf5(file_id, grid, airlayers)
 
     integer(kind=HID_T), intent(in)                 :: file_id
-    type (grid_t) , intent(inout)        :: grid
-    type (airLayers_t), intent(inout):: airLayers
+    type (grid_t) , intent(inout)		:: grid
+    type(airLayers_t), intent(inout)    :: airLayers
 
-    integer                              :: istat
+    integer                                 :: istat
 
-    INTEGER(HSIZE_T), DIMENSION(1) :: dim1d ! Datasets dimensions for 1D arrays
-    integer           :: hdferr
-
-    character(80)                           :: someChar='',paramType=''
-    REAL(KIND=8), DIMENSION(1), allocatable :: xctr(:), yctr(:), zctr(:) !Read data buffers for 1D Arrays
-    INTEGER(HSIZE_T)                        :: nx, ny, nz !create memory buffers for X, Y, Z, and sigma to be used for getting the # of elements in each array
-    integer                                 :: grid_x, grid_y, grid_z, NzAir, i, j, k
-    real(8)                                    :: origin_x, origin_y, origin_z
-    real(8)                                    :: origin(3)
+    REAL(KIND=8), DIMENSION(:), allocatable :: xctr, yctr, zctr !Read data buffers for 1D Arrays
+    INTEGER(HSIZE_T)                        :: nx, ny, nz
+    integer                                 :: grid_x, grid_y, grid_z, NzAir, i
+    real(8)                                 :: origin_x, origin_y, origin_z
+    real(8)                                 :: origin(3)
 
     integer (kind=HID_T) :: x_dset_id, y_dset_id, z_dset_id
     integer (kind=HID_T) :: x_dspace_id, y_dspace_id, z_dspace_id
