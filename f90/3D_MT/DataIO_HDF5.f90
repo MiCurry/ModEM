@@ -394,7 +394,16 @@ subroutine write_datablock(datablock_group_id, dataBlock)
     call ModEM_HDF5_create_dataspace(rank(dataBlock % error), shape(dataBlock % error, kind=HSIZE_T), std_dspace_id)
     call ModEM_HDF5_create_dataset(datablock_group_id, "std", H5T_NATIVE_DOUBLE, std_dspace_id, std_dset_id)
 
-    call ModEM_HDF5_write_dataset(std_dset_id, H5T_NATIVE_DOUBLE, dataBlock % error)
+
+    if (datablock % errorBar) then
+        call ModEM_HDF5_write_dataset(std_dset_id, H5T_NATIVE_DOUBLE, dataBlock % error)
+    else
+        ! Let us not allocate a new array here, so we can save memory by just doing
+        ! things in place.
+        dataBlock % error(:,:) = LARGE_REAL
+        call ModEM_HDF5_write_dataset(std_dset_id, H5T_NATIVE_DOUBLE, dataBlock % error)
+    end if
+
 
     call ModEM_HDF5_close_dataset(std_dset_id)
     call ModEM_HDF5_close_dataspace(std_dspace_id)
