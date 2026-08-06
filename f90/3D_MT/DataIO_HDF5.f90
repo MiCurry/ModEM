@@ -580,6 +580,7 @@ subroutine read_txdict(file_id)
     integer (kind=HID_T) :: periods_dset_id, periods_dspace_id
 
     integer (kind=HSIZE_T) :: nperiods
+    integer :: i
 
     real (kind=prec), dimension(:), allocatable :: periods
 
@@ -595,8 +596,11 @@ subroutine read_txdict(file_id)
 
     call ModEM_HDF5_read_dataset(periods_dset_id, H5T_NATIVE_DOUBLE, periods)
     call setup_txDict(int(nPeriods, kind=SP), periods, 2)
-    write(0,*) "After reading txDict from HDF5 file, the periods are: "
-    call print_txDict()
+
+    ! Set the tx_type field for all transmitters to 'MT'
+    do i = 1, int(nPeriods, kind=SP)
+        txDict(i) % tx_type = 'MT'
+    end do
 
     deallocate(periods)
 
@@ -635,12 +639,6 @@ subroutine read_datablocks(file_id, allData)
     integer :: ret_value, hdferr_lcl
 
     call ModEM_HDF5_open_group(file_id, DATA_GRP_NAME, data_group_id)
-    !call ModEM_HDF5_does_group_exist(data_group_id, MT_GROUP_NAME, exists)
-    !if (.false.) then
-    !    call errStop("No MT data group '"//trim(MT_GROUP_NAME)//"' in data file!")
-    !end if
-
-    ! Open
     call ModEM_HDF5_open_group(data_group_id, MT_GROUP_NAME, datablocks_group_id)
 
     nTx = size(txDict)
@@ -659,7 +657,6 @@ subroutine read_datablocks(file_id, allData)
         
         call data_iterate_datablocks(allData, datablock_itx_gid, iTx)
 
-        allData % d(iTx) % allocated = .true.
 
         call ModEM_HDF5_close_group(datablock_itx_gid)
     end do
@@ -749,6 +746,8 @@ subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
     call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, &
             return_value, hdferr)
 
+    allData % d(iTx) % allocated = .true.
+
     deallocate(datablock_info)
 
 end subroutine data_iterate_datablocks
@@ -788,8 +787,6 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
 
     group_name_string_clean = group_name_string(1:null_pos-1)
     call ModEM_HDF5_open_group(parent_id, group_name_string, block_group_id)
-
-    write(0,*) 'Processing datablock: ', trim(group_name_string_clean), ' for transmitter: ', datablock_info % iTx, ' and data type: ', trim(group_name_string_clean)
 
     select case(group_name_string_clean)
         case (trim(MT_IMPEDANCE_VAR_NAME))
@@ -857,7 +854,6 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     ! Open 'value'
     call ModEM_HDF5_open_dataset(mt_group_id, 'value', value_dset_id)
     call ModEM_HDF5_get_dataspace(value_dset_id, value_dspace_id)
-
     call ModEM_HDF5_get_dataspace_dims(value_dspace_id, value_dims, value_max_dims, rank)
 
     allocate(values(value_dims(1), value_dims(2)))
@@ -869,7 +865,6 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     ! Open 'irx'
     call ModEM_HDF5_open_dataset(mt_group_id, 'irx', irx_dset_id)
     call ModEM_HDF5_get_dataspace(irx_dset_id, irx_dspace_id)
-
     call ModEM_HDF5_get_dataspace_dims(irx_dspace_id, irx_dims, irx_max_dims, rank)
 
     allocate(irx(irx_dims(1)))
@@ -886,6 +881,10 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     allData % d(iTx) % data (idt) % value(:,:) = values
     allData % d(iTx) % data (idt) % rx(:) = irx
     allData % d(iTx) % data (idt) % dataType = datatype
+    allData % d(iTx) % data (idt) % tx = iTx
+    allData % d(iTx) % data (idt) % txType = MT
+
+    allData % d(iTx) % data (idt) % allocated = .true.
 
     deallocate(std)
     deallocate(values)
