@@ -536,7 +536,7 @@ subroutine read_rxdict(file_id)
     call ModEM_HDF5_close_group(mt_rx_group_id)
 
     ! Now Setup RX Dict
-    allocate(siteLocations(3,nSites))
+    allocate(siteLocations(nSites,3))
 
     do i = 1, nSites, 1
         siteLocations(i, 1) = rxdict_lat(i)
@@ -639,14 +639,14 @@ subroutine read_datablocks(file_id, allData)
     integer :: ret_value, hdferr_lcl
 
     call ModEM_HDF5_open_group(file_id, DATA_GRP_NAME, data_group_id)
-    call ModEM_HDF5_open_group(data_group_id, MT_GROUP_NAME, datablocks_group_id)
+    call ModEM_HDF5_open_group(data_group_id, 'MT/datablocks', datablocks_group_id)
 
     nTx = size(txDict)
 
     call create_dataVectorMTX(nTx, allData)
 
     do iTx = 1, nTx
-        write(data_block_iTx_name, '(a, a1, I0.2)') DATA_BLOCK_GROUP_NAME, '.', iTx
+        write(data_block_iTx_name, '(a, a1, I0.2)') trim(DATA_BLOCK_GROUP_NAME), '.', iTx
         call ModEM_HDF5_open_group(file_id, data_block_itx_name, datablock_itx_gid)
 
         call count_number_of_datablocks(datablock_itx_gid, ndt)
@@ -831,7 +831,7 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     integer (kind=HSIZE_T), allocatable :: irx_dims(:), irx_max_dims(:)
 
     real (kind=prec), dimension(:,:), allocatable :: std, values
-    real (kind=prec), dimension(:), allocatable :: irx
+    integer, dimension(:), allocatable :: irx
 
     dataType = MT_DATATYPE_NUM
     isComplex = typeDict(datatype) % isComplex
@@ -868,7 +868,7 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     call ModEM_HDF5_get_dataspace_dims(irx_dspace_id, irx_dims, irx_max_dims, rank)
 
     allocate(irx(irx_dims(1)))
-    call ModEM_HDF5_read_dataset(irx_dset_id, H5T_NATIVE_DOUBLE, irx)
+    call ModEM_HDF5_read_dataset(irx_dset_id, H5T_NATIVE_INTEGER, irx)
 
     call ModEM_HDF5_close_dataspace(irx_dspace_id)
     call ModEM_HDF5_close_dataset(irx_dset_id)

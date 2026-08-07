@@ -16,6 +16,7 @@ module ModEM_HDF5
 
     interface ModEM_HDF5_read_dataset
         module procedure ModEM_HDF5_read_dataset_string
+        module procedure ModEM_HDF5_read_dataset_int_1D
         module procedure ModEM_HDF5_read_dataset_real_double_1D
         module procedure ModEM_HDF5_read_dataset_real_double_2D
         module procedure ModEM_HDF5_read_dataset_real_double_3D
@@ -907,6 +908,37 @@ subroutine ModEM_HDF5_read_dataset_real_double_1D(dset_id, type, buf, hdferr)
     end if
 
 end subroutine ModEM_HDF5_read_dataset_real_double_1D
+
+subroutine ModEM_HDF5_read_dataset_int_1D(dset_id, type, buf, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer (kind=HID_T), intent(in) :: type
+    integer, dimension(:), target :: buf
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    raise_error = present(hdferr)
+
+    buf_ptr = c_loc(buf(1))
+    call ModEM_HDF5_read_dataset_cptr(dset_id, type, buf_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when reading dataset set in ModEM_HDF5_read_dataset_int_1D"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_read_dataset_int_1D
 
 subroutine ModEM_HDF5_read_dataset_real_double_2D(dset_id, type, buf, hdferr)
 
