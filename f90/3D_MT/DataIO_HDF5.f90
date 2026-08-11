@@ -23,7 +23,7 @@ submodule (DataIO) DataIO_HDF5
   !       nDt  = number of all possible data types
   ! number of transmitter types comes from the DICT/txTypes module
   ! and defines the number of conceptually different types of sources
-  type (data_file_block), pointer, save, dimension(:,:) :: fileInfo
+  !type (data_file_block), pointer, save, dimension(:,:) :: fileInfo
 
   ! we are converting from an "old format" to a "new format"
   ! the only difference being that in the new format, there is
@@ -340,8 +340,14 @@ subroutine write_datablocks(file_id, allData)
     integer :: nDataType
     integer (kind=HID_T) :: datablocks_group_id, datablock_group_id, datatype_group_id
 
+    integer :: txType
+    character(len=10) :: txType_name
+    integer :: datatype
+    logical :: conjugate
+
     call ModEM_HDF5_create_group(file_id, DATA_BLOCKS_GROUP_NAME, datablocks_group_id)
 
+    ! Loop through the transmitters...
     do iTx = 1, size(allData % d)
         write(data_block_iTx_name, '(a, a1, I0.2)') trim(DATA_BLOCK_GROUP_NAME), '.', iTx
         call ModEM_HDF5_create_group(file_id, data_block_itx_name, datablock_group_id)
@@ -349,8 +355,13 @@ subroutine write_datablocks(file_id, allData)
         ! Add the transmitter value as an attribute to this datablock
         call ModEM_HDF5_add_attr(datablock_group_id, 'Tx', txDict(iTx) % period)
 
+        ! loop through the datatypes for each transmitters
         do nDataType = 1, allData % d(iTx) % nDt
-            select case(allData % d (iTx) % data(nDatatype) % dataType)
+            datatype = allData % d(iTx) % data(nDataType) % dataType
+            txtype = allData % d(iTx) % txType
+            txType_name = trim(tx_type_name(txtype))
+
+            select case(datatype)
                 case (Full_Impedance)
                     datatype_group_name = trim(data_block_iTx_name)//trim(Z)
                 case (Full_Vertical_Components)
@@ -359,13 +370,43 @@ subroutine write_datablocks(file_id, allData)
                     call errStop('ModEM_HDF5 cannot write out this datatype yet..')
             end select
 
+            write(0,*) 'txType: ', txtype, txType_name, ' datatype: ', datatype, ' datatype_group_name: ', trim(datatype_group_name)
+
             ! TODO: We probably want these set above in the select case, or 
             ! just have each data type add it's attributes on its own... for now this is okay
             call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
             call ModEM_HDF5_add_attr(datatype_group_id, 'column', 'component')
             call ModEM_HDF5_add_attr(datatype_group_id, 'row', 'Rx')
             call ModEM_HDF5_add_attr(datatype_group_id, 'comment', 'complex values sorted by real/imag pairs')
+
+            write(0,*) 'Writing datablock for Tx: ', iTx, ' DataType: ', nDataType, ' Name: ', trim(datatype_group_name), datatype 
+            ! Print out fileinfo:
+            write(0,*) 'iTx: ', iTx, ' datatype: ', datatype
+            write(0,*) 'FileInfo: ', fileInfo(txType, datatype) % defined
+            write(0,*) 'FileINfo units_in_file: ', trim(fileInfo(txType, datatype) % units_in_file)
+            call compact(fileInfo(txType, datatype) % sign_info_in_file)
+            write(0,*) 'FineInfo sign_in_file: ', fileInfo(txType, datatype) % sign_in_file
+            write(0,*) 'FineInfo sign_info_in_file: ', trim(fileInfo(txType, datatype) % sign_info_in_file)
+            write(0,*) 'After FileInfo...'
+
+            if (fileInfo(txType, datatype) % units_in_file == '') then
+                call ModEM_HDF5_add_attr(datatype_group_id, 'units', typeDict(datatype) % units)
+            else
+                call ModEM_HDF5_add_attr(datatype_group_id, 'units', fileInfo(txType, datatype) % units_in_file)
+            end if
+
+
+            if (fileInfo(txType, datatype) % sign_in_file == ISIGN) then
+                conjugate = .false.
+                call ModEM_HDF5_add_attr(datatype_group_id, 'sign', ISIGN)
+            else
+                conjugate = .true.
+                call ModEM_HDF5_add_attr(datatype_group_id, 'sign', fileInfo(txType, datatype) % sign_in_file)
+            end if
+
+            ! Finish writing the datablock - std, value, etc.
             call write_datablock(datatype_group_id, allData % d(iTx) % data(nDataType))
+
             call ModEM_HDF5_close_group(datatype_group_id)
         end do
 
@@ -394,7 +435,6 @@ subroutine write_datablock(datablock_group_id, dataBlock)
     call ModEM_HDF5_create_dataspace(rank(dataBlock % error), shape(dataBlock % error, kind=HSIZE_T), std_dspace_id)
     call ModEM_HDF5_create_dataset(datablock_group_id, "std", H5T_NATIVE_DOUBLE, std_dspace_id, std_dset_id)
 
-
     if (datablock % errorBar) then
         call ModEM_HDF5_write_dataset(std_dset_id, H5T_NATIVE_DOUBLE, dataBlock % error)
     else
@@ -403,7 +443,6 @@ subroutine write_datablock(datablock_group_id, dataBlock)
         dataBlock % error(:,:) = LARGE_REAL
         call ModEM_HDF5_write_dataset(std_dset_id, H5T_NATIVE_DOUBLE, dataBlock % error)
     end if
-
 
     call ModEM_HDF5_close_dataset(std_dset_id)
     call ModEM_HDF5_close_dataspace(std_dspace_id)
@@ -437,12 +476,19 @@ subroutine read_data_hdf5(allData, cfile)
 
     integer (kind=HID_T) :: file_id
 
+    integer :: nTxt, nDT
+
     call setup_typeDict()
     call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
 
     call read_txdict(file_id)
     call read_rxdict(file_id)
     call read_typelist(file_id)
+
+    nTxt = 5
+    nDT = size(typeDict)
+    call init_fileInfo(nTxt, nDT)
+
     call read_datablocks(file_id, allData)
 
     call ModEM_HDF5_close_file(file_id)
@@ -654,9 +700,8 @@ subroutine read_datablocks(file_id, allData)
         call create_dataVector(ndt, allData % d(iTx))
         allData % d(iTx) % tx = iTx
         allData % d(iTx) % txType = MT
-        
-        call data_iterate_datablocks(allData, datablock_itx_gid, iTx)
 
+        call data_iterate_datablocks(allData, datablock_itx_gid, iTx)
 
         call ModEM_HDF5_close_group(datablock_itx_gid)
     end do
@@ -804,6 +849,9 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
 
     read_datablock_func = 0 ! Return code - 0 continues to the next iteartion (see H5literate_f)
 
+    fileInfo(datablock_info % iTx, datablock_info % iDt) % defined = .true.
+    fileInfo(datablock_info % iTx, datablock_info % iDt) % info_in_file = "# Read in by ModEM using HDF5 module"
+
 end function read_datablock_func
 
 subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
@@ -883,7 +931,6 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     allData % d(iTx) % data (idt) % dataType = datatype
     allData % d(iTx) % data (idt) % tx = iTx
     allData % d(iTx) % data (idt) % txType = MT
-
     allData % d(iTx) % data (idt) % allocated = .true.
 
     deallocate(std)

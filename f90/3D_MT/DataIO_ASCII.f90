@@ -73,6 +73,8 @@ Contains
 
     integer     :: i,j, istat
 
+    write(0,*) "We are deallocating fileInfo in DataIO_ASCII.f90"
+
     if (associated(fileInfo)) then
 
      do i = 1,size(fileInfo,1)
@@ -134,6 +136,9 @@ Contains
     ! For each data type in dictionary, if data of this type exists, write it out.
     WRITE_TX_TYPE: do iTxt = 1,5
 
+
+      write(0,*) "Writing data for transmitter type: ", trim(tx_type_name(iTxt))
+      write(0,*) "TX TYPE: ", iTxt, " ", trim(tx_type_name(iTxt))
       ! subset to extract the data of one transmitter type only & work with that;
       ! call subset_dataVectorMTX(allData,txType_allData,iTxt)
 
@@ -532,7 +537,7 @@ Contains
     nDt = size(typeDict)
     call init_fileInfo(nTxt,nDt)
 
-    ! Now, read the data file
+     ! Now, read the data file
     open(unit=ioDat,file=cfile,form='formatted',status='old')
       
     ! Read the data blocks for each data type
@@ -562,7 +567,11 @@ Contains
     	end if
 
         call compact(typeInfo)
+        write(0,*) 'fileInfo for iTxt = ', iTxt, ' iDt= ',iDt
     	fileInfo(iTxt,iDt)%defined = .true.
+
+        write(0,*) "Type info after: ", trim(typeInfo)
+
     	fileInfo(iTxt,iDt)%info_in_file = typeInfo
     	
     	! Sort out the sign convention
