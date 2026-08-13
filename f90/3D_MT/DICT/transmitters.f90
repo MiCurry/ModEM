@@ -87,6 +87,8 @@ module transmitters
   integer, parameter   :: TIDE = 4
   integer, parameter   :: GLOBAL = 5
 
+  integer, parameter   :: NUMBER_OF_TX_TYPES = 5
+
 Contains
 
 !**********************************************************************
