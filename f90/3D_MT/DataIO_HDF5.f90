@@ -396,12 +396,16 @@ subroutine write_datablocks(file_id, allData)
             end if
 
 
+            write(0,*) "Adding sign_info into file: ", trim(fileInfo(TxType, dataType) % sign_info_in_file)
+
             if (fileInfo(txType, datatype) % sign_in_file == ISIGN) then
                 conjugate = .false.
                 call ModEM_HDF5_add_attr(datatype_group_id, 'sign', ISIGN)
+                call ModEM_HDF5_add_attr(datatype_group_id, 'sign_info', trim(fileInfo(TxType, dataType) % sign_info_in_file))
             else
                 conjugate = .true.
                 call ModEM_HDF5_add_attr(datatype_group_id, 'sign', fileInfo(txType, datatype) % sign_in_file)
+                call ModEM_HDF5_add_attr(datatype_group_id, 'sign_info', trim(fileInfo(TxType, dataType) % sign_info_in_file))
             end if
 
             ! Finish writing the datablock - std, value, etc.
@@ -475,8 +479,7 @@ subroutine read_data_hdf5(allData, cfile)
     character(*), intent(in) :: cfile
 
     integer (kind=HID_T) :: file_id
-
-    integer :: nTxt, nDT
+    integer :: iDt, iTx, tx_types 
 
     call setup_typeDict()
     call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
@@ -485,11 +488,30 @@ subroutine read_data_hdf5(allData, cfile)
     call read_rxdict(file_id)
     call read_typelist(file_id)
 
-    nTxt = 5
-    nDT = size(typeDict)
-    call init_fileInfo(nTxt, nDT)
+    call init_fileInfo(NUMBER_OF_TX_TYPES, size(typeDict))
 
     call read_datablocks(file_id, allData)
+
+    ! Setup the rest of fileInfo, so that we can write out ASCII
+    ! data files if asked for...
+    do tx_types = 1, NUMBER_OF_TX_TYPES
+        do iDt = 1, size(typeDict)
+            allocate(fileInfo(tx_types, iDt) % tx_index(size(txDict)))
+            allocate(fileInfo(tx_types, iDt) % dt_index(size(txDict)))
+            allocate(fileInfo(tx_types, iDt) % rx_index(size(txDict), size(rxDict)))
+
+            call index_dataVectorMTX(allData,&
+                tx_types, &
+                iDt, &
+                fileInfo(tx_types, iDt) % tx_index, &
+                fileInfo(tx_types, iDt) % dt_index, &
+                fileInfo(tx_types, iDt) % rx_index)
+        end do
+    end do
+
+    write(0,*) 'iTx: ', iTx
+    write(0,*) 'iDt: ', iDt
+    write(0,*) 'Size TxDict: ', size(txDict), ' Size RxDict: ', size(rxDict)
 
     call ModEM_HDF5_close_file(file_id)
 
@@ -730,29 +752,6 @@ integer function count_datablock_cb(loc_id, name, info, ndt) bind(c)
 
 end function count_datablock_cb
 
-subroutine count_number_of_datablocks(data_block_itx_gid, nDt)
-
-    implicit none
-
-    integer (kind=HID_T), intent(in) :: data_block_itx_gid
-    integer, target, intent(out) :: ndt
-
-    type(c_ptr) :: ptr
-    type(c_funptr) :: funptr
-
-    integer (kind=HSIZE_T) :: idx
-    integer :: hdferr
-    integer :: return_value
-
-    ndt = 0 
-    idx = 0
-
-    ptr = c_loc(ndt)
-    funptr = c_funloc(count_datablock_cb)
-    call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, return_value, hdferr)
-
-end subroutine count_number_of_datablocks
-
 subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
     ! Iterate though all the datablocks for a transmitter and read them into the allData structure
     ! To do this, we use the callback function read_datablock_func writen below.
@@ -818,7 +817,15 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
     character(len=10) :: group_name_string, group_name_string_clean
     type (datablock_iter_type), pointer :: datablock_info
 
+    integer :: txType ! Transmitter type (index)
+    integer :: iTx ! Transmitter index
+    integer :: iDt ! Datatype index
+    integer :: dataType
+
     call c_f_pointer(datablock_info_ptr, datablock_info)
+
+    iTx = datablock_info % iTx
+    iDt = datablock_info % iDt
 
     group_name_string = ''
 
@@ -836,8 +843,12 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
     select case(group_name_string_clean)
         case (trim(MT_IMPEDANCE_VAR_NAME))
             call process_mt_datablock(block_group_id, datablock_info, ImpType(trim(MT_IMPEDANCE_VAR_NAME)))
+            txType = tx_type_index('MT')
+            dataType = ImpType(trim(MT_IMPEDANCE_VAR_NAME))
         case (trim(MT_TIPPER_VAR_NAME))
             call process_mt_datablock(block_group_id, datablock_info, ImpType(trim(MT_TIPPER_VAR_NAME)))
+            txType = tx_type_index('MT')
+            dataType = ImpType(trim(MT_TIPPER_VAR_NAME))
         case default
             write(0,*) 'This data type: ', trim(group_name_string), ' cannot yet be processed by ModEMs HDF5 module'
             write(0,*) 'Skipping it....'
@@ -849,10 +860,37 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
 
     read_datablock_func = 0 ! Return code - 0 continues to the next iteartion (see H5literate_f)
 
-    fileInfo(datablock_info % iTx, datablock_info % iDt) % defined = .true.
-    fileInfo(datablock_info % iTx, datablock_info % iDt) % info_in_file = "# Read in by ModEM using HDF5 module"
+    fileInfo(txType, dataType) % defined = .true.
+    fileInfo(txType, dataType) % info_in_file = "# Read in by ModEM using HDF5 module"
+    fileInfo(txType, dataType) % units_in_file = typeDict(ImpType(trim(group_name_string_clean))) % units
+
+    write(0,*) 'FileInfo: ', iTx, iDt, 'units_in_file: ', fileInfo(iTx, iDt) % units_in_file
 
 end function read_datablock_func
+
+subroutine count_number_of_datablocks(data_block_itx_gid, nDt)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: data_block_itx_gid
+    integer, target, intent(out) :: ndt
+
+    type(c_ptr) :: ptr
+    type(c_funptr) :: funptr
+
+    integer (kind=HSIZE_T) :: idx
+    integer :: hdferr
+    integer :: return_value
+
+    ndt = 0 
+    idx = 0
+
+    ptr = c_loc(ndt)
+    funptr = c_funloc(count_datablock_cb)
+    call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, return_value, hdferr)
+
+end subroutine count_number_of_datablocks
+
 
 subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
 
@@ -881,9 +919,12 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     real (kind=prec), dimension(:,:), allocatable :: std, values
     integer, dimension(:), allocatable :: irx
 
+    character(len=512) :: units, sign_info
+
     dataType = MT_DATATYPE_NUM
     isComplex = typeDict(datatype) % isComplex
     nComp = typeDict(datatype) % nComp
+
 
     allData => datablock_info % allData
     iTx = datablock_info % iTx
@@ -923,15 +964,27 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
 
     nSite = irx_dims(1)
 
+    ! Read Attributes
+    call ModEM_HDF5_read_attr(mt_group_id, 'units', units)
+    call MOdEM_HDF5_read_attr(mt_group_id, 'sign_info', sign_info)
+
+    write(0,*) 'Units in file for HDF5: ', trim(units)
+    write(0,*) 'Sing_info in file for HDF5: ', trim(sign_info)
+
+    fileInfo(tx_type_index('MT'), dataType) % sign_info_in_file = sign_info
+
     call create_datablock(nComp, nSite, allData % d(iTx) % data(iDt), isComplex, .true.)
 
     allData % d(iTx) % data (idt) % error(:,:) = std
     allData % d(iTx) % data (idt) % value(:,:) = values
     allData % d(iTx) % data (idt) % rx(:) = irx
+    write(0,*) 'We are adding datatType to this datatype: ', dataType
     allData % d(iTx) % data (idt) % dataType = datatype
     allData % d(iTx) % data (idt) % tx = iTx
     allData % d(iTx) % data (idt) % txType = MT
     allData % d(iTx) % data (idt) % allocated = .true.
+
+    write(0,*) 'HDF5 allData % nTx: ', allData % nTx
 
     deallocate(std)
     deallocate(values)

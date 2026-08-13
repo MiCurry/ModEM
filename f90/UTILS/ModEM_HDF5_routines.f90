@@ -1464,6 +1464,8 @@ subroutine ModEM_HDF5_read_attr_string(loc_id, attr_name, attr_value, hdferr)
 
     raise_error = present(hdferr)
 
+    attr_value = ""
+
     ! Open the attribute
     call h5aopen_f(loc_id, attr_name, attr_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
