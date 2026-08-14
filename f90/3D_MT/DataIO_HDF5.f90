@@ -50,8 +50,8 @@ submodule (DataIO) DataIO_HDF5
   type :: datablock_iter_type
     type(dataVectorMTX_t), pointer :: allData
     integer (kind=HID_T) :: data_block_itx_gid
-    integer :: iTx
-    integer :: iDt
+    integer :: txType
+    integer :: dataType
   end type
 
 Contains
@@ -370,8 +370,6 @@ subroutine write_datablocks(file_id, allData)
                     call errStop('ModEM_HDF5 cannot write out this datatype yet..')
             end select
 
-            write(0,*) 'txType: ', txtype, txType_name, ' datatype: ', datatype, ' datatype_group_name: ', trim(datatype_group_name)
-
             ! TODO: We probably want these set above in the select case, or 
             ! just have each data type add it's attributes on its own... for now this is okay
             call ModEM_HDF5_create_group(datablock_group_id, datatype_group_name, datatype_group_id)
@@ -379,25 +377,13 @@ subroutine write_datablocks(file_id, allData)
             call ModEM_HDF5_add_attr(datatype_group_id, 'row', 'Rx')
             call ModEM_HDF5_add_attr(datatype_group_id, 'comment', 'complex values sorted by real/imag pairs')
 
-            write(0,*) 'Writing datablock for Tx: ', iTx, ' DataType: ', nDataType, ' Name: ', trim(datatype_group_name), datatype 
-            ! Print out fileinfo:
-            write(0,*) 'iTx: ', iTx, ' datatype: ', datatype
-            write(0,*) 'FileInfo: ', fileInfo(txType, datatype) % defined
-            write(0,*) 'FileINfo units_in_file: ', trim(fileInfo(txType, datatype) % units_in_file)
-            call compact(fileInfo(txType, datatype) % sign_info_in_file)
-            write(0,*) 'FineInfo sign_in_file: ', fileInfo(txType, datatype) % sign_in_file
-            write(0,*) 'FineInfo sign_info_in_file: ', trim(fileInfo(txType, datatype) % sign_info_in_file)
-            write(0,*) 'After FileInfo...'
-
             if (fileInfo(txType, datatype) % units_in_file == '') then
                 call ModEM_HDF5_add_attr(datatype_group_id, 'units', typeDict(datatype) % units)
             else
                 call ModEM_HDF5_add_attr(datatype_group_id, 'units', fileInfo(txType, datatype) % units_in_file)
             end if
 
-
-            write(0,*) "Adding sign_info into file: ", trim(fileInfo(TxType, dataType) % sign_info_in_file)
-
+            call compact(fileInfo(txType, datatype) % sign_info_in_file)
             if (fileInfo(txType, datatype) % sign_in_file == ISIGN) then
                 conjugate = .false.
                 call ModEM_HDF5_add_attr(datatype_group_id, 'sign', ISIGN)
@@ -479,44 +465,43 @@ subroutine read_data_hdf5(allData, cfile)
     character(*), intent(in) :: cfile
 
     integer (kind=HID_T) :: file_id
-    integer :: iDt, iTx, tx_types 
+    integer :: iDt, iTx, tx_type 
+    integer :: nTransmitters
 
     call setup_typeDict()
-    call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
 
-    call read_txdict(file_id)
+    call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
+    call read_txdict(file_id, nTransmitters)
     call read_rxdict(file_id)
     call read_typelist(file_id)
 
+    ! To convert HDF5 to ascii, we need to keep track of what is in the file
+    ! as DataIO_ASCII uses the fileinfo type to write things out.
     call init_fileInfo(NUMBER_OF_TX_TYPES, size(typeDict))
-
-    call read_datablocks(file_id, allData)
+    call read_all_mt_datablocks(file_id, nTransmitters, allData)
 
     ! Setup the rest of fileInfo, so that we can write out ASCII
     ! data files if asked for...
-    do tx_types = 1, NUMBER_OF_TX_TYPES
+    do tx_type = 1, NUMBER_OF_TX_TYPES
         do iDt = 1, size(typeDict)
-            allocate(fileInfo(tx_types, iDt) % tx_index(size(txDict)))
-            allocate(fileInfo(tx_types, iDt) % dt_index(size(txDict)))
-            allocate(fileInfo(tx_types, iDt) % rx_index(size(txDict), size(rxDict)))
+            allocate(fileInfo(tx_type, iDt) % tx_index(size(txDict)))
+            allocate(fileInfo(tx_type, iDt) % dt_index(size(txDict)))
+            allocate(fileInfo(tx_type, iDt) % rx_index(size(txDict), size(rxDict)))
 
             call index_dataVectorMTX(allData,&
-                tx_types, &
+                tx_type, &
                 iDt, &
-                fileInfo(tx_types, iDt) % tx_index, &
-                fileInfo(tx_types, iDt) % dt_index, &
-                fileInfo(tx_types, iDt) % rx_index)
+                fileInfo(tx_type, iDt) % tx_index, &
+                fileInfo(tx_type, iDt) % dt_index, &
+                fileInfo(tx_type, iDt) % rx_index)
         end do
     end do
-
-    write(0,*) 'iTx: ', iTx
-    write(0,*) 'iDt: ', iDt
-    write(0,*) 'Size TxDict: ', size(txDict), ' Size RxDict: ', size(rxDict)
 
     call ModEM_HDF5_close_file(file_id)
 
 end subroutine read_data_hdf5
 
+! Read the recievers in the HDF5 file
 subroutine read_rxdict(file_id)
 
     implicit none
@@ -638,11 +623,13 @@ subroutine read_typelist(file_id)
 end subroutine read_typelist
 
 
-subroutine read_txdict(file_id)
+! HDF5 read the transmitters in the HDF5 file
+subroutine read_txdict(file_id, nTransmitters)
 
     implicit none
 
     integer (kind=HID_T), intent(in) :: file_id
+    integer, intent(out) :: nTransmitters
 
     integer (kind=HID_T) :: mt_tx_group_id
     integer (kind=HID_T) :: periods_dset_id, periods_dspace_id
@@ -676,16 +663,26 @@ subroutine read_txdict(file_id)
     call ModEM_HDF5_close_dataset(periods_dset_id)
     call ModEM_HDF5_close_group(mt_tx_group_id)
 
+    nTransmitters = size(rxDict)
 
 end subroutine read_txdict
 
-subroutine read_datablocks(file_id, allData)
+
+subroutine read_all_mt_datablocks(file_id, nTx, allData)
+    ! Read datablocks inside the HDF5 file. The datablocks are organized under 
+    ! /Data/MT/datablocks/datablock.nn and are labeled with an integer nn. Each 
+    ! nn representing a period that is in the tx dict.
+    !
+    ! To read datablocks, we first need to know how many transmitters in the file 
+    ! there are (which is determined in read_rxdict). Then, for each datablock, 
+    ! we use the hdf5 library to iterate through the datatypes (inside data_iterate_datablocks).
 
     use iso_c_binding
 
     implicit none
 
     integer (kind=HID_T) :: file_id
+    integer, intent(in) :: nTx
     type(dataVectorMTX_t), intent(inout) :: allData
 
     character(len=*), parameter :: DATA_BLOCKS_GROUP_NAME = '/Data/MT/datablocks'
@@ -709,21 +706,19 @@ subroutine read_datablocks(file_id, allData)
     call ModEM_HDF5_open_group(file_id, DATA_GRP_NAME, data_group_id)
     call ModEM_HDF5_open_group(data_group_id, 'MT/datablocks', datablocks_group_id)
 
-    nTx = size(txDict)
-
     call create_dataVectorMTX(nTx, allData)
 
     do iTx = 1, nTx
         write(data_block_iTx_name, '(a, a1, I0.2)') trim(DATA_BLOCK_GROUP_NAME), '.', iTx
         call ModEM_HDF5_open_group(file_id, data_block_itx_name, datablock_itx_gid)
 
-        call count_number_of_datablocks(datablock_itx_gid, ndt)
+        ndt = count_number_of_datatypes_in_datablock(datablock_itx_gid)
 
         call create_dataVector(ndt, allData % d(iTx))
         allData % d(iTx) % tx = iTx
         allData % d(iTx) % txType = MT
 
-        call data_iterate_datablocks(allData, datablock_itx_gid, iTx)
+        call process_all_datatypes_in_datablock(allData, datablock_itx_gid, iTx)
 
         call ModEM_HDF5_close_group(datablock_itx_gid)
     end do
@@ -733,32 +728,9 @@ subroutine read_datablocks(file_id, allData)
     call ModEM_HDF5_close_group(datablocks_group_id)
     call ModEM_HDF5_close_group(data_group_id)
 
-end subroutine read_datablocks
+end subroutine read_all_mt_datablocks
 
-integer function count_datablock_cb(loc_id, name, info, ndt) bind(c)
-
-    use iso_c_binding, only : c_ptr, c_null_char, c_f_pointer, c_int
-
-    implicit none 
-
-    integer (kind=HID_T), value:: loc_id
-    character(len=1), dimension(1:10) :: name ! must have LEN=1 for bind(C) strings
-    type (c_ptr) :: info
-    integer, volatile :: ndt
-
-    ndt = ndt + 1
-
-    count_datablock_cb = 0_c_int
-
-end function count_datablock_cb
-
-subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
-    ! Iterate though all the datablocks for a transmitter and read them into the allData structure
-    ! To do this, we use the callback function read_datablock_func writen below.
-    !
-    ! We also need to pass information into the read_datablock_func for the functions that
-    ! process specific data types. Thus we can use the datablock_iter_type which will
-    ! contain information needed for those processing functions and contain a pointer to allData.
+subroutine process_all_datatypes_in_datablock(allData, data_block_itx_gid, txType)
 
     use iso_c_binding, only : c_ptr, c_loc, c_funptr
 
@@ -766,7 +738,7 @@ subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
 
     type (dataVectorMTX_t), target, intent(inout) :: allData
     integer (kind=HID_T), target, intent(in) :: data_block_itx_gid
-    integer, target, intent(in) :: iTx
+    integer, target, intent(in) :: txType
     
     type (datablock_iter_type), pointer :: datablock_info
     type (c_ptr) :: ptr
@@ -780,8 +752,8 @@ subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
 
     datablock_info % allData => allData
     datablock_info % data_block_itx_gid = data_block_itx_gid
-    datablock_info % iTx = iTx
-    datablock_info % iDt = 1
+    datablock_info % txType = txType
+    datablock_info % dataType = 1
 
     iDx = 0
     funptr = c_funloc(read_datablock_func)
@@ -790,11 +762,11 @@ subroutine data_iterate_datablocks(allData, data_block_itx_gid, iTx)
     call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, &
             return_value, hdferr)
 
-    allData % d(iTx) % allocated = .true.
+    allData % d(txType) % allocated = .true.
 
     deallocate(datablock_info)
 
-end subroutine data_iterate_datablocks
+end subroutine process_all_datatypes_in_datablock
 
 integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bind(c)
     ! We need to have this function here so that we can iterate through datablocks.
@@ -824,8 +796,8 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
 
     call c_f_pointer(datablock_info_ptr, datablock_info)
 
-    iTx = datablock_info % iTx
-    iDt = datablock_info % iDt
+    iTx = datablock_info % txType
+    iDt = datablock_info % dataType
 
     group_name_string = ''
 
@@ -856,7 +828,7 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
 
     call ModEM_HDF5_close_group(block_group_id)
 
-    datablock_info % iDt = datablock_info % idt + 1
+    datablock_info % dataType = datablock_info % dataType + 1
 
     read_datablock_func = 0 ! Return code - 0 continues to the next iteartion (see H5literate_f)
 
@@ -864,32 +836,8 @@ integer function read_datablock_func(loc_id, name, info, datablock_info_ptr) bin
     fileInfo(txType, dataType) % info_in_file = "# Read in by ModEM using HDF5 module"
     fileInfo(txType, dataType) % units_in_file = typeDict(ImpType(trim(group_name_string_clean))) % units
 
-    write(0,*) 'FileInfo: ', iTx, iDt, 'units_in_file: ', fileInfo(iTx, iDt) % units_in_file
-
 end function read_datablock_func
 
-subroutine count_number_of_datablocks(data_block_itx_gid, nDt)
-
-    implicit none
-
-    integer (kind=HID_T), intent(in) :: data_block_itx_gid
-    integer, target, intent(out) :: ndt
-
-    type(c_ptr) :: ptr
-    type(c_funptr) :: funptr
-
-    integer (kind=HSIZE_T) :: idx
-    integer :: hdferr
-    integer :: return_value
-
-    ndt = 0 
-    idx = 0
-
-    ptr = c_loc(ndt)
-    funptr = c_funloc(count_datablock_cb)
-    call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, return_value, hdferr)
-
-end subroutine count_number_of_datablocks
 
 
 subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
@@ -927,8 +875,8 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
 
 
     allData => datablock_info % allData
-    iTx = datablock_info % iTx
-    idt = datablock_info % idt
+    iTx = datablock_info % txType
+    idt = datablock_info % dataType
 
     call ModEM_HDF5_open_dataset(mt_group_id, 'std', std_dset_id)
     call ModEM_HDF5_get_dataspace(std_dset_id, std_dspace_id)
@@ -968,9 +916,6 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     call ModEM_HDF5_read_attr(mt_group_id, 'units', units)
     call MOdEM_HDF5_read_attr(mt_group_id, 'sign_info', sign_info)
 
-    write(0,*) 'Units in file for HDF5: ', trim(units)
-    write(0,*) 'Sing_info in file for HDF5: ', trim(sign_info)
-
     fileInfo(tx_type_index('MT'), dataType) % sign_info_in_file = sign_info
 
     call create_datablock(nComp, nSite, allData % d(iTx) % data(iDt), isComplex, .true.)
@@ -978,18 +923,64 @@ subroutine process_mt_datablock(mt_group_id, datablock_info, MT_DATATYPE_NUM)
     allData % d(iTx) % data (idt) % error(:,:) = std
     allData % d(iTx) % data (idt) % value(:,:) = values
     allData % d(iTx) % data (idt) % rx(:) = irx
-    write(0,*) 'We are adding datatType to this datatype: ', dataType
     allData % d(iTx) % data (idt) % dataType = datatype
     allData % d(iTx) % data (idt) % tx = iTx
     allData % d(iTx) % data (idt) % txType = MT
     allData % d(iTx) % data (idt) % allocated = .true.
-
-    write(0,*) 'HDF5 allData % nTx: ', allData % nTx
 
     deallocate(std)
     deallocate(values)
     deallocate(irx)
 
 end subroutine process_mt_datablock
+
+function count_number_of_datatypes_in_datablock(data_block_itx_gid) result(nDataTypes)
+    ! Returns the number of datatypes inside of a datablock
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: data_block_itx_gid
+
+    integer, target :: ndt
+    integer :: nDataTypes
+
+    type(c_ptr) :: ptr
+    type(c_funptr) :: funptr
+
+    integer (kind=HSIZE_T) :: idx
+    integer :: hdferr
+    integer :: return_value
+
+    nDataTypes = 0
+    ndt = 0 
+    idx = 0
+
+    ptr = c_loc(ndt)
+    funptr = c_funloc(count_datatypes_in_datablocks_callback)
+    call h5literate_f(data_block_itx_gid, H5_INDEX_NAME_F, H5_ITER_NATIVE_F, idx, funptr, ptr, return_value, hdferr)
+
+    ndatatypes = ndt
+
+end function count_number_of_datatypes_in_datablock
+
+integer function count_datatypes_in_datablocks_callback(loc_id, name, info, ndt) bind(c)
+    ! Call back function that should only be called by count_number_of_datatypes_in_datablock
+    ! This function simply increments ndt each time it is iterated over by h5literate_f,
+    ! thus counting the number of datablocks.
+
+    use iso_c_binding, only : c_ptr, c_null_char, c_f_pointer, c_int
+
+    implicit none 
+
+    integer (kind=HID_T), value:: loc_id
+    character(len=1), dimension(1:10) :: name ! must have LEN=1 for bind(C) strings
+    type (c_ptr) :: info
+    integer, volatile :: ndt
+
+    ndt = ndt + 1
+
+    count_datatypes_in_datablocks_callback = 0_c_int
+
+end function count_datatypes_in_datablocks_callback
 
 end submodule DataIO_HDF5
