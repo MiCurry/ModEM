@@ -8,7 +8,9 @@ module ModEM_HDF5
 
     interface ModEM_HDF5_write_dataset
         module procedure ModEM_HDF5_write_dataset_string
+        module procedure ModEM_HDF5_write_dataset_int
         module procedure ModEM_HDF5_write_dataset_int_1D
+        module procedure ModEM_HDF5_write_dataset_real_double
         module procedure ModEM_HDF5_write_dataset_real_double_1D
         module procedure ModEM_HDF5_write_dataset_real_double_2D
         module procedure ModEM_HDF5_write_dataset_real_double_3D
@@ -25,6 +27,7 @@ module ModEM_HDF5
     interface ModEM_HDF5_add_attr
         module procedure ModEM_HDF5_add_attr_string
         module procedure ModEM_HDF5_add_attr_int
+        module procedure ModEM_HDF5_add_attr_int_1D_HID
         module procedure ModEM_HDF5_add_attr_real_double
         module procedure ModEM_HDF5_add_attr_real_1D
         module procedure ModEM_HDF5_add_attr_real_double_2D
@@ -49,6 +52,8 @@ module ModEM_HDF5
            integer (kind=HID_T) :: parent_id
         end function ModEM_h5_itr_cb_interf
     end interface
+
+    character (len=*), parameter :: DIMENSION_SCALE_CLASS = 'DIMENSION_SCALE'
 
 contains
 
@@ -587,7 +592,9 @@ subroutine ModEM_HDF5_create_dataset(loc_id, dataset_name, type, dspace_id, dset
 
     raise_error = present(hdferr)
 
-    call h5dcreate_f(loc_id, dataset_name, type, dspace_id, dset_id, hdferr_lcl)
+    write(0,*) 'Dataset name: ', trim(dataset_name)
+
+    call h5dcreate_f(loc_id, trim(dataset_name), type, dspace_id, dset_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -688,6 +695,39 @@ subroutine ModEM_HDF5_write_dataset_string(dset_id, type, buf, hdferr)
 
 end subroutine ModEM_HDF5_write_dataset_string
 
+subroutine ModEM_HDF5_write_dataset_real_double(dset_id, type, buf, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer (kind=HID_T), intent(in) :: type
+    real (kind=prec), pointer, intent(in) :: buf
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    raise_error = present(hdferr)
+
+    buf_ptr = c_loc(buf)
+    call ModEM_HDF5_write_dataset_cptr(dset_id, type, buf_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        write(0,*) "ERROR!"
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when writing dataset set in ModEM_HDF5_write_dataset_real_double"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+
+end subroutine ModEM_HDF5_write_dataset_real_double
+
 subroutine ModEM_HDF5_write_dataset_real_double_1D(dset_id, type, buf, hdferr)
 
     use iso_c_binding, only : c_loc, c_ptr
@@ -752,6 +792,38 @@ subroutine ModEM_HDF5_write_dataset_real_double_2D(dset_id, type, buf, hdferr)
 
 
 end subroutine ModEM_HDF5_write_dataset_real_double_2D
+
+subroutine ModEM_HDF5_write_dataset_int(dset_id, type, buf, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer (kind=HID_T), intent(in) :: type
+    integer, target, intent(in) :: buf
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    raise_error = present(hdferr)
+
+    buf_ptr = c_loc(buf)
+    call ModEM_HDF5_write_dataset_cptr(dset_id, type, buf_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when writing dataset set in ModEM_HDF5_write_dataset_int"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_write_dataset_int
+
 
 subroutine ModEM_HDF5_write_dataset_int_1D(dset_id, type, buf, hdferr)
 
@@ -908,6 +980,37 @@ subroutine ModEM_HDF5_read_dataset_real_double_1D(dset_id, type, buf, hdferr)
     end if
 
 end subroutine ModEM_HDF5_read_dataset_real_double_1D
+
+subroutine ModEM_HDF5_read_dataset_int(dset_id, type, buf, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer (kind=HID_T), intent(in) :: type
+    integer, target :: buf
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    raise_error = present(hdferr)
+
+    buf_ptr = c_loc(buf)
+    call ModEM_HDF5_read_dataset_cptr(dset_id, type, buf_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when reading dataset set in ModEM_HDF5_read_dataset_int"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_read_dataset_int
 
 subroutine ModEM_HDF5_read_dataset_int_1D(dset_id, type, buf, hdferr)
 
@@ -1193,6 +1296,90 @@ subroutine ModEM_HDF5_add_attr_int(loc_id, attr_name, attr_value, hdferr)
     end if
 
 end subroutine ModEM_HDF5_add_attr_int
+
+subroutine ModEM_HDF5_add_attr_int_1D_HID(loc_id, attr_name, attr_value, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: attr_name
+    integer (kind=HID_T), dimension(:), target :: attr_value 
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: aspace_id, attr_id
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: attr_value_ptr
+
+    raise_error = present(hdferr)
+
+    call h5screate_simple_f(rank(attr_value), shape(attr_value, kind=HSIZE_T), aspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when calling h5screate_simple_f in ModEM_HDF5_add_attr_real_1D"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5acreate_f(loc_id, attr_name, H5T_NATIVE_DOUBLE, aspace_id, attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when calling h5acreate_f in ModEM_HDF5_add_attr_real_1D"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    attr_value_ptr = c_loc(attr_value)
+
+    call h5awrite_f(attr_id, H5T_NATIVE_DOUBLE, attr_value_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when calling h5awrite_f in ModEM_HDF5_add_attr_real_1D"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5aclose_f(attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when calling h5aclose_f in ModEM_HDF5_add_attr_real_1D"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5sclose_f(aspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when calling h5sclose_f in ModEM_HDF5_add_attr_real_1D"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_add_attr_int_1D_HID
 
 
 subroutine ModEM_HDF5_add_attr_real_double(loc_id, attr_name, attr_value, hdferr)
