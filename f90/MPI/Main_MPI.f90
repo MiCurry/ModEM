@@ -21,6 +21,7 @@ module Main_MPI
 
   use EsolnManager
   use ModEM_timers
+  use ModEM_memory
   ! use ioascii
 
   implicit none
@@ -1730,6 +1731,8 @@ subroutine Master_job_send_inv_iteration(iteration_num, comm)
     integer, intent(in), optional :: comm
     integer :: task, size_current, comm_current
 
+    character (len=512) :: memory_log_msg
+
     if (present(comm)) then
          if (comm .eq. MPI_COMM_NULL) then
              comm_current = comm_world
@@ -1750,6 +1753,12 @@ subroutine Master_job_send_inv_iteration(iteration_num, comm)
     do task = 1, size_current - 1
         call MPI_SEND(worker_job_package, Nbytes, MPI_PACKED, task, FROM_MASTER, comm_current, ierr)
     end do
+
+    call expand_string('Iteration: $i - Task: $i', memory_log_msg, intArgs=(/iteration_num, taskid/) )
+    call ModEM_memory_print_report(memory_log_msg)
+
+    call expand_string('Iteration: $i - All Tasks:', memory_log_msg, intArgs=(/iteration_num/) )
+    call ModEM_memory_get_all(memory_log_msg)
 
     write(0,*) "New Iteration: ", iteration_num
 
@@ -2167,6 +2176,7 @@ Subroutine Worker_job(sigma,d)
      Integer,pointer,dimension(:)           :: group_sizes
      character(20)                          :: which_proc
      character(80)                          :: paramType,previous_message
+     character(512)                         :: memory_log_msg
    
      ! sensitivity
      type(modelParam_t), pointer            :: Jreal(:),Jimag(:)
@@ -2994,6 +3004,12 @@ Subroutine Worker_job(sigma,d)
 
             iteration_number = iteration_number + 1
             write(0,*) "New Iteration: ", iteration_number
+
+            call expand_string('Iteration: $i - Task: $i', memory_log_msg, intArgs=(/iteration_number, taskid/) )
+            call ModEM_memory_print_report(memory_log_msg)
+
+            call expand_string('Iteration: $i - All Tasks:', memory_log_msg, intArgs=(/iteration_number/) )
+            call ModEM_memory_get_all(memory_log_msg)
 
          elseif (trim(worker_job_task%what_to_do) .eq. 'STOP' ) then
              ! clear all the temp packages and stop

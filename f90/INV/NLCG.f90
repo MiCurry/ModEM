@@ -7,6 +7,8 @@ use invcore
 use utilities
 use ModelSpace
 
+use Main_MPI
+
 
 implicit none
 
@@ -344,6 +346,8 @@ Contains
    call ModEM_timers_create("NLCG Iteration", .false.)
    do
       call ModEM_timers_start("NLCG Iteration")
+      call Master_job_send_inv_iteration(iter)
+
       !  test for convergence ...
       if((rms.lt.iterControl%rmsTol).or.(iter.ge.iterControl%maxIter)) then
          exit
