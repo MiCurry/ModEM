@@ -192,10 +192,10 @@ end subroutine pack_userdef_control
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%search,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%option,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%prefix,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_input_ftype,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_output_ftype,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%model_input_ftype,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%model_output_ftype,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
+   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_input_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
+   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_output_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
+   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%model_input_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
+   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%model_output_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
 
    ! IO Options
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_input_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
@@ -250,10 +250,10 @@ subroutine check_userdef_control_MPI (which_proc,ctrl)
     end if
 
     write(6,*)trim(which_proc),' : ctrl%prefix ',trim(ctrl%prefix)
-    write(6,*)trim(which_proc),' : ',trim(ctrl%data_input_ftype)
-    write(6,*)trim(which_proc),' : ',trim(ctrl%data_output_ftype)
-    write(6,*)trim(which_proc),' : ',trim(ctrl%model_input_ftype)
-    write(6,*)trim(which_proc),' : ',trim(ctrl%model_output_ftype)
+    write(6,*)trim(which_proc),' : ctrl%data_input_format ',trim(ctrl%data_input_format)
+    write(6,*)trim(which_proc),' : ctrl%data_output_format ',trim(ctrl%data_output_format)
+    write(6,*)trim(which_proc),' : ctrl%model_input_format ',trim(ctrl%model_input_format)
+    write(6,*)trim(which_proc),' : ctrl%model_output_format ',trim(ctrl%model_output_format)
     write(6,*)trim(which_proc),' : ctrl%storeSolnsInfile ',ctrl%storeSolnsInfile
 
     if (ctrl%SFF) then ! 'hidden option' only print if it has been set via namelist

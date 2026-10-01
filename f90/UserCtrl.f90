@@ -191,15 +191,15 @@ Contains
   	ctrl%output_level = 3	
 	ctrl%prefix = 'n'
 #ifdef HDF5
-    ctrl%data_input_ftype = DATA_FILE_TYPE_HDF5
-    ctrl%data_output_Ftype = DATA_FILE_TYPE_HDF5
-    ctrl%model_input_ftype = HDF5_FILE_TYPE
-    ctrl%model_output_ftype = HDF5_FILE_TYPE
+    ctrl%data_input_format = DATA_FILE_TYPE_HDF5
+    ctrl%data_output_format = DATA_FILE_TYPE_HDF5
+    ctrl%model_input_format = HDF5_FILE_TYPE
+    ctrl%model_output_format = HDF5_FILE_TYPE
 #else
-    ctrl%data_input_ftype = DATA_FILE_TYPE_ASCII
-    ctrl%data_output_Ftype = DATA_FILE_TYPE_ASCII
-    ctrl%model_input_ftype = WS_FILE_TYPE
-    ctrl%model_output_ftype = WS_FILE_TYPE
+    ctrl%data_input_format = DATA_FILE_TYPE_ASCII
+    ctrl%data_output_format = DATA_FILE_TYPE_ASCII
+    ctrl%model_input_format = WS_FILE_TYPE
+    ctrl%model_output_format = WS_FILE_TYPE
 #endif
 	ctrl%storeSolnsInFile = .false.
     ctrl%SFF = .false.
@@ -1484,16 +1484,16 @@ Contains
      type (userdef_control), intent(inout) :: ctrl
      integer, intent(in) :: nl_fid
 
-     character(len=80) :: input_ftype = ''
-     character(len=80) :: output_ftype = ''
+     character(len=80) :: input_format = ''
+     character(len=80) :: output_format = ''
 
      integer :: iostat
      character (len=256) :: iomsg
 
-     namelist /data_io/ input_ftype, output_ftype
+     namelist /data_io/ input_format, output_format
 
-     input_ftype = trim(ctrl % data_input_ftype)
-     output_ftype = trim(ctrl % data_output_ftype)
+     input_format = trim(ctrl % data_input_format)
+     output_format = trim(ctrl % data_output_format)
 
      read(nl_fid, nml=data_io, iostat=iostat, iomsg=iomsg)
      if (iostat /= 0) then
@@ -1511,8 +1511,8 @@ Contains
 
      write(0,*) "Optional namelist section '&data_io' was read!"
 
-     ctrl % data_input_ftype = trim(input_ftype)
-     ctrl % data_output_ftype = trim(output_ftype)
+     ctrl % data_input_format = trim(input_format)
+     ctrl % data_output_format = trim(output_format)
 
   end subroutine process_nml_section_data_io
 
@@ -1524,11 +1524,11 @@ Contains
 
      write(nl_fid, *) '&data_io'
 #ifdef HDF5
-     write(nl_fid, *) '    input_ftype = "HDF5"'
-     write(nl_fid, *) '    output_ftype = "HDF5"'
+     write(nl_fid, *) '    input_format = "HDF5"'
+     write(nl_fid, *) '    output_format = "HDF5"'
 #else
-     write(nl_fid, *) '    input_ftype = "ASCII_LIST_FORMAT"'
-     write(nl_fid, *) '    output_ftype = "ASCII_LIST_FORMAT"'
+     write(nl_fid, *) '    input_format = "ASCII_LIST_FORMAT"'
+     write(nl_fid, *) '    output_format = "ASCII_LIST_FORMAT"'
 #endif
      write(nl_fid, *) '/'
 
@@ -1541,16 +1541,16 @@ Contains
      type (userdef_control), intent(inout) :: ctrl
      integer, intent(in) :: nl_fid
 
-     character(len=80) :: input_ftype = ''
-     character(len=80) :: output_ftype = ''
+     character(len=80) :: input_format = ''
+     character(len=80) :: output_format = ''
 
      integer :: iostat
      character (len=256) :: iomsg
 
-     namelist /model_io/ input_ftype, output_ftype
+     namelist /model_io/ input_format, output_format
 
-     input_ftype = trim(ctrl % model_input_ftype)
-     output_ftype = trim(ctrl % model_output_ftype)
+     input_format = trim(ctrl % model_input_format)
+     output_format = trim(ctrl % model_output_format)
 
      read(nl_fid, nml=model_io, iostat=iostat, iomsg=iomsg)
      if (iostat /= 0) then
@@ -1568,8 +1568,8 @@ Contains
 
      write(0,*) "Optional namelist section '&model_io' was read!"
 
-     ctrl % model_input_ftype = trim(input_ftype)
-     ctrl % model_output_ftype = trim(output_ftype)
+     ctrl % model_input_format = trim(input_format)
+     ctrl % model_output_format = trim(output_format)
 
   end subroutine process_nml_section_model_io
 
