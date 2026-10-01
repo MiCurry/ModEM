@@ -974,6 +974,21 @@ subroutine expand_string(inString, outString, intArgs, logicArgs, realArgs)
 !--------------------------------------------------------------------
 end subroutine expand_string
 
+subroutine clean_null_term_string(str)
+
+   implicit none 
+
+   character(len=*), intent(inout) :: str
+
+   integer :: p
+
+   p = index(str, achar(0))
+   if (p > 0) then
+      str = str(1:p-1)
+   end if
+
+end subroutine clean_null_term_string
+
 subroutine compiled_with_HDF5_check()
 
     implicit none

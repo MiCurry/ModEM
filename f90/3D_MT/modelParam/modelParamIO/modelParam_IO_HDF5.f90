@@ -1,8 +1,7 @@
 submodule (ModelSpace:ModelSpaceIO) modelParam_IO_HDF5
 
 #ifdef HDF5
-use hdf5
-use h5ds
+
 use griddef
 use ModEM_HDF5
 
@@ -12,114 +11,6 @@ character (len=*), parameter :: METERS = 'meters'
 
 contains
 
-subroutine convert_model_to_netcdf()
-
-    implicit none
-
-    ! Convert from ModEM
-
-
-end subroutine convert_model_to_netcdf
-
-!******************************************************************
-module subroutine read_modelParam_hdf5(grid,airLayers,m,cfile)
-
-    ! opens cfile on unit ioPrm, reads the object of
-    ! type modelParam in HDF5/NetCDF4+ format, closes file
-    ! we can update the grid here, but the grid as an input is critical
-    ! for setting the pointer to the grid in the modelParam
-
-    type(grid_t), target, intent(inout)  :: grid
-    type(airLayers_t), intent(inout)	   :: airLayers
-    type(modelParam_t), intent(out)	   :: m
-    character(*), intent(in)             :: cfile
-    integer		                       :: istat
-    ! local variables
-
-    integer(kind=HID_T)                 :: file_id
-    type(rscalar)                        :: ccond
-    character(80)                        :: paramType=''
-    integer                              :: Nx, Ny, NzEarth, i, j, k
-
-    real (kind=prec), allocatable, dimension(:,:,:) :: Sigma ! Read data buffer for 3D Arrays
-
-    integer (kind=HID_T) :: dset_id, dspace_id
-
-    if (gridCoords .eq. SPHERICAL) then
-        write(0,*) 'Will be reading the model input in spherical HDF5 format...'
-    else
-        write(0,*) 'Will be reading the model input in cartesian HDF5 format...'
-    end if
-
-    call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
-
-    ! First read grid geometry from HDF5 file
-    call read_geometry_hdf5(file_id, grid, airLayers)
-
-    paramType = ''
-
-    ! Now, reopen HDF5 to read the conductivity
-    write(0,*) cfile,' is open and ready to read electrical conductivity'
-
-    ! Open Sigma dataset and get dataspace dimensions
-    call ModEM_HDF5_open_dataset(file_id, "sigma", dset_id)
-
-    ! The npoints will be a differents size for each dataset for sigma use ny,nx,and nz
-    call ModEM_HDF5_get_dataspace(dset_id, dspace_id)
-
-    !allocate the space for the local variable
-    Ny = grid%ny
-    Nx = grid%nx
-    NzEarth = grid%nzEarth
-    allocate(Sigma(Nx,Ny,NzEarth), STAT = istat)
-
-    ! Read  grid geometries from Hdf5
-    call ModEM_HDF5_read_dataset(dset_id, H5T_NATIVE_DOUBLE, Sigma)
-
-    call ModEM_HDF5_read_attr(dset_id, 'paramType', paramType)
-    write(0,*) 'paramType read from HDF5 file: ', paramType
-
-    call ModEM_HDF5_close_dataspace(dspace_id)
-    call ModEM_HDF5_close_dataset(dset_id)
-    call ModEM_HDF5_close_file(file_id)
-
-    ! Set ParamType to be used when reading conductivity values
-    ! Read the paramater type from the HDF5 file attributes, if available. If not, default to LOG10.
-
-    ! Create and read in the resistivity values
-    call create_rscalar(grid,ccond,CELL_EARTH)
-
-    ! Save the conductivity
-    do i=1,Nx
-        do j=1,Ny
-            do k=1,NzEarth
-                ccond%v(i,j,k) = Sigma(i,j,k)
-            end do
-        end do
-    end do
-
-    if ((index(paramType,'LOGE')>0) .or. (index(paramType,'LOG10')>0)) then
-        ccond%v = - ccond%v
-    else if (index(paramType,'LINEAR')>0) then
-        ccond%v = ONE/ccond%v
-    end if
-
-    ! Finally create the model parameter
-    call create_modelParam(grid,paramType,m,ccond)
-
-    ! In ModelSpace, save the user paramType for output
-    userParamType = paramType
-
-    ! ALWAYS convert modelParam to natural log for computations
-    paramType = 'LOGE'
-    call setType_modelParam(m,paramType)
-
-    ! now done with the rscalars, so deallocate
-    deallocate(Sigma, STAT = istat)
-    call deall_rscalar(ccond)
-
-end subroutine read_modelParam_hdf5
-
 module subroutine write_modelParam_hdf5(m,cfile,comment)
     ! opens cfile on unit ioPrm, writes the object of
     ! type modelParam in HDF5/NetCDF4+ format, closes file
@@ -127,6 +18,8 @@ module subroutine write_modelParam_hdf5(m,cfile,comment)
     type(modelParam_t), intent(in)	   :: m
     character(*), intent(in)             :: cfile
     character(*), intent(in), optional   :: comment
+
+    character (len=512) :: hdf5_version_str
 
     integer(kind=HID_T) :: file_id 
 
@@ -138,6 +31,25 @@ module subroutine write_modelParam_hdf5(m,cfile,comment)
 
     ! Open file here
     call ModEM_HDF5_create_file(cfile, H5F_ACC_TRUNC_F, file_id)
+
+    call ModEM_HDF5_get_version(hdf5_version_str)
+    call ModEM_HDF5_add_attr(file_id, '_NCProperties', "version=2,hdf5="// trim(hdf5_version_str))
+    call ModEM_HDF5_add_attr(file_id, '_HDF5_version', trim(hdf5_version_str))
+    call ModEM_HDF5_add_attr(file_id, '_nc3_strict', 1)
+
+!    ! Metadata attributes
+    call ModEM_HDF5_add_attr(file_id, 'author_name', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'author_institution', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'author_email', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'author_url', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'id', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'model', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'reference', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'reference_pid', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'summary', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'title', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'data_revision', 'none')
+    call ModEM_HDF5_add_attr(file_id, 'version', 'none')
 
     ! Write Model attributes
     call ModEM_HDF5_add_attr(file_id, 'Conventions', 'CF-1.0')
@@ -157,6 +69,27 @@ module subroutine write_modelParam_hdf5(m,cfile,comment)
     call ModEM_HDF5_add_attr(file_id, 'model_rotation_angle', m % grid % rotdeg)
     call ModEM_HDF5_add_attr(file_id, 'model_rotation_units', 'degrees')
 
+    !! geospatial_lat_min, max etc.
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lat_min', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lat_max', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lat_units', 'degrees_north')
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lon_min', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lon_max', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lon_units', 'degrees_east')
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_vertical_min', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_vertical_max', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_vertical_units', 'meters')
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_vertical_positive', 'up')
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lon_resolution', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'geospatial_lat_resolution', 0.0)
+    call ModEM_HDF5_add_attr(file_id, 'grid_dim', '3D')
+    call ModEM_HDF5_add_attr(file_id, 'grid_ref', 'latitude_longitude')
+    call ModEM_HDF5_add_attr(file_id, 'model_type', '3-D Electrical Conductivity Earth Model')
+    call ModEM_HDF5_add_attr(file_id, 'model_subtype', 'none')
+
+    ! Grid Dimension and refence
+    call ModEM_HDF5_add_attr(file_id, 'grid_nx', m % grid % nx)
+!
     call write_geometry_hdf5(file_id, m)
     !call write_gridSpacing_hdf5(file_id, m)
     call write_sigma_hdf5(file_id, m)
@@ -195,12 +128,9 @@ subroutine write_geometry_hdf5(file_id, m)
     ! Create and write the X variable dimension
     call ModEM_HDF5_create_dataspace(rank(grid % xCenter), (/size(grid % xCenter, kind=HSIZE_T)/), x_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'x', H5T_NATIVE_DOUBLE, x_dspace_id, x_dset_id)
-
-    ! TODO: Add a higher level ModEM_HDF5 to create this dimension scale
-    call h5dsset_scale_f(x_dset_id, hdferr, 'x')
-    call h5dsattach_scale_f(x_dset_id, x_scale_id, 0, hdferr)
-
     call ModEM_HDF5_write_dataset(x_dset_id, H5T_NATIVE_DOUBLE, grid % xCenter)
+    call ModEM_HDF5_make_dataset_dimension(x_dset_id, hdferr)
+
     call ModEM_HDF5_add_attr(x_dset_id, '_Netcdf4Dimid', 0) 
     call ModEM_HDF5_add_attr(x_dset_id, 'long_name', 'Latitude; positive north')
     call ModEM_HDF5_add_attr(x_dset_id, 'standard_name', 'x')
@@ -212,10 +142,7 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_create_dataspace(rank(grid % yCenter), (/size(grid % yCenter, kind=HSIZE_T)/), y_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'y', H5T_NATIVE_DOUBLE, y_dspace_id, y_dset_id)
     call ModEM_HDF5_write_dataset(y_dset_id, H5T_NATIVE_DOUBLE, grid % yCenter)
-
-    ! TODO: Add a higher level ModEM_HDF5 routine to create this dimension scale
-    call h5dsset_scale_f(y_dset_id, hdferr, 'y')
-    call h5dsattach_scale_f(y_dset_id, y_scale_id, 0, hdferr)
+    call ModEM_HDF5_make_dataset_dimension(y_dset_id, hdferr)
 
     call ModEM_HDF5_add_attr(y_dset_id, '_Netcdf4Dimid', 1) 
     call ModEM_HDF5_add_attr(y_dset_id, 'long_name', 'Longitude; positive east')
@@ -228,15 +155,13 @@ subroutine write_geometry_hdf5(file_id, m)
     call ModEM_HDF5_create_dataspace(rank(grid % zCenter), (/int(NzEarth, kind=HSIZE_T)/), z_dspace_id)
     call ModEM_HDF5_create_dataset(root_group_id, 'z', H5T_NATIVE_DOUBLE, z_dspace_id, z_dset_id)
     call ModEM_HDF5_write_dataset(z_dset_id, H5T_NATIVE_DOUBLE, grid % zCenter(grid % NzAir+1:grid%nz))
-
-    ! TODO: Add a higher level ModEM_HDF5 routine to create this dimension scale
-    call h5dsset_scale_f(z_dset_id, hdferr, 'z')
-    call h5dsattach_scale_f(z_dset_id, z_scale_id, 0, hdferr)
+    call ModEM_HDF5_make_dataset_dimension(z_dset_id, hdferr)
 
     call ModEM_HDF5_add_attr(z_dset_id, '_Netcdf4Dimid', 2) 
     call ModEM_HDF5_add_attr(z_dset_id, 'long_name', 'depth below earth surface')
     call ModEM_HDF5_add_attr(z_dset_id, 'positive', 'down')
     call ModEM_HDF5_add_attr(z_dset_id, 'units', METERS)
+    call ModEM_HDF5_add_attr(z_dset_id, 'standard_name', 'elevation')
     call ModEM_HDF5_close_dataset(z_dset_id)
     call ModEM_HDF5_close_dataspace(z_dspace_id)
 
@@ -273,7 +198,6 @@ subroutine write_gridSpacing_hdf5(file_id, m)
     call ModEM_HDF5_open_group(file_id, "/", root_group_id)
 
     call ModEM_HDF5_create_group(file_id, "GridSpacing", grid_spacing_group_id)
-
     ! Dx
     call ModEM_HDF5_create_dataspace(rank(grid % dx), (/size(grid % dx, kind=HSIZE_T)/), dx_dspace_id)
     call ModEM_HDF5_create_dataset(grid_spacing_group_id, 'Dx', H5T_NATIVE_DOUBLE, dx_dspace_id, dx_dset_id)
@@ -296,7 +220,6 @@ subroutine write_gridSpacing_hdf5(file_id, m)
     call ModEM_HDF5_create_dataset(grid_spacing_group_id, 'Dz', H5T_NATIVE_DOUBLE, dz_dspace_id, dz_dset_id)
     call ModEM_HDF5_write_dataset(dz_dset_id, H5T_NATIVE_DOUBLE, grid % dz(grid%NzAir+1:grid%nz))
 
-
     call ModEM_HDF5_close_dataset(dz_dset_id)
     call ModEM_HDF5_close_dataspace(dz_dspace_id)
 
@@ -316,10 +239,13 @@ subroutine write_sigma_hdf5(file_id, m)
     character(80)                         :: paramType =''
 
     integer                               :: Nx, Ny, NzEarth
-    character (len=*), parameter :: prop = "log_10_sigma"
+    character (len=*), parameter :: prop = "sigma"
 
     integer (kind=HID_T) :: sigma_dset_id, sigma_dspace_id
     integer (kind=HID_T) :: x_dset_id, y_dset_id, z_dset_id
+    integer :: i, j, k
+
+    real(kind=prec), dimension(:,:,:), pointer :: sigma_out
 
     integer :: err 
 
@@ -333,11 +259,7 @@ subroutine write_sigma_hdf5(file_id, m)
     Ny=grid%ny
     NzEarth=grid%nz - grid%nzAir
 
-    write(0,*) 'NzEarth: ', NzEarth
-    write(0,*) 'grid % nz: ', grid % nz
-    write(0,*) 'grid % nzAir: ', grid % nzAir
-
-    call ModEM_HDF5_create_dataspace(3, (/int(Nx, kind=HSIZE_T), int(Ny, kind=HSIZE_T), int(NzEarth, kind=HSIZE_T)/), sigma_dspace_id)
+    call ModEM_HDF5_create_dataspace(3, (/int(Ny, kind=HSIZE_T), int(Nx, kind=HSIZE_T), int(NzEarth, kind=HSIZE_T)/), sigma_dspace_id)
     call ModEM_HDF5_create_dataset(file_id, prop, H5T_NATIVE_DOUBLE, sigma_dspace_id, sigma_dset_id)
 
     ! Attache the x, y, and z datasets (dimensions) to log_10_sigma.
@@ -350,32 +272,36 @@ subroutine write_sigma_hdf5(file_id, m)
     !
     ! For those interested, this will create a DIMENSION_LIST attribute on the HDF5 
     ! log_10_sigma variable and a REFERENCE_LIST on attribute on the dimensions (x, y, z).
-    call h5dopen_f(file_id, "x", x_dset_id, err)
-    call h5dopen_f(file_id, "y", y_dset_id, err)
-    call h5dopen_f(file_id, "z", z_dset_id, err)
-    call h5dsattach_scale_f(sigma_dset_id, z_dset_id, 1, err)
-    call h5dsattach_scale_f(sigma_dset_id, y_dset_id, 2, err)
-    call h5dsattach_scale_f(sigma_dset_id, x_dset_id, 3, err)
+    call ModEM_HDF5_attach_dim(file_id, 'z', sigma_dset_id, 1)
+    call ModEM_HDF5_attach_dim(file_id, 'x', sigma_dset_id, 2)
+    call ModEM_HDF5_attach_dim(file_id, 'y', sigma_dset_id, 3)
 
     ! Assign attribute values
     call ModEM_HDF5_add_attr(sigma_dset_id, 'paramType', 'LOG10')
-    call ModEM_HDF5_add_attr(sigma_dset_id, 'display_name', 'log(10) electrical conductivity, in S/m')
+    call ModEM_HDF5_add_attr(sigma_dset_id, 'display_name', 'log(10) electrical conductivity, in Seimens/meter')
+
+    ! Transpose
+    allocate(sigma_out(Ny, Nx, NzEarth))
+    do k = 1, NzEarth
+        do j = 1, Ny
+            do i = 1, Nx
+                sigma_out(j, i, k) = ccond%v(i, j, k)
+            end do
+        end do
+    end do
 
     ! Convert from conductivity to resitivity for output
-    call copy_rscalar(rho, ccond)
     if ((index(paramType,'LOGE')>0) .or. (index(paramType,'LOG10')>0)) then
-        ccond%v = - ccond%v
+        sigma_out = - sigma_out
     else if (index(paramType,'LINEAR')>0) then
-        ccond%v = ONE/ccond%v
+        sigma_out = ONE/sigma_out
     end if
 
     call ModEM_HDF5_add_attr(sigma_dset_id, 'long_name', 'electrical conductivity')
     call ModEM_HDF5_add_attr(sigma_dset_id, 'units', 'S/m')
     call ModEM_HDF5_add_attr(sigma_dset_id, 'missing_value', 99999.0_prec)
-    ! Write the resistivity
 
-    write(0,*) 'Size: ', size(ccond%v), shape(ccond%v)
-    call ModEM_HDF5_write_dataset(sigma_dset_id, H5T_NATIVE_DOUBLE, ccond%v)
+    call ModEM_HDF5_write_dataset(sigma_dset_id, H5T_NATIVE_DOUBLE, sigma_out)
 
     call ModEM_HDF5_close_dataset(sigma_dset_id)
     call ModEM_HDF5_close_dataspace(sigma_dspace_id)
@@ -386,19 +312,12 @@ subroutine read_model_coords()
 
     implicit none
 
+    ! Read in x, y and z
+
 
 end subroutine read_model_coords
 
-subroutine calculate_grid_spacing_from_centers(origin, coord_centers, d)
-
-    real (kind=prec), dimension(:), intent(in) :: origin
-    real (kind=prec), dimension(:,:,:), intent(in) :: coord_centers
-    real (kind=prec), dimension(:,:,:), intent(out) :: d
-
-
-end subroutine calculate_grid_spacing_from_centers
-
-subroutine calculate_cord_spacing_from_centers(coord_origin, coord_centers, dVar)
+subroutine calculate_grid_spacing_from_centers(coord_origin, coord_centers, dVar)
 
     implicit none
 
@@ -411,38 +330,95 @@ subroutine calculate_cord_spacing_from_centers(coord_origin, coord_centers, dVar
     integer :: i
 
     cursor = coord_origin
-
     do i = 1, size(coord_centers)
-        dVar = 2 * (coord_centers(i)-cursor)
+        dVar(i) = 2.0_prec * (coord_centers(i) - cursor)
         cursor = cursor + dVar(i)
     end do
 
-end subroutine calculate_cord_spacing_from_centers
+end subroutine calculate_grid_spacing_from_centers
 
-!******************************************************************
+module subroutine read_modelParam_hdf5(grid,airLayers,m,cfile)
+
+    ! opens cfile on unit ioPrm, reads the object of
+    ! type modelParam in HDF5/NetCDF4+ format, closes file
+    ! we can update the grid here, but the grid as an input is critical
+    ! for setting the pointer to the grid in the modelParam
+
+    type(grid_t), target, intent(inout)  :: grid
+    type(airLayers_t), intent(inout)	   :: airLayers
+    type(modelParam_t), intent(out)	   :: m
+    character(*), intent(in)             :: cfile
+    ! local variables
+
+    integer(kind=HID_T)                 :: file_id
+    type(rscalar)                        :: ccond
+    character(80)                        :: paramType=''
+
+    if (gridCoords .eq. SPHERICAL) then
+        write(0,*) 'Will be reading the model input in spherical HDF5 format...'
+    else
+        write(0,*) 'Will be reading the model input in cartesian HDF5 format...'
+    end if
+
+
+    call ModEM_HDF5_open(cfile, file_id, H5F_ACC_RDONLY_F)
+
+    ! First read grid geometry from HDF5 file
+    call read_geometry_hdf5(file_id, grid, airLayers)
+
+    paramType = ''
+
+    call create_rscalar(grid, ccond, CELL_EARTH)
+    call read_sigma_hdf5(file_id, grid, ccond, paramType)
+
+    call ModEM_HDF5_close_file(file_id)
+
+    ! Finally create the model parameter
+    call create_modelParam(grid,paramType,m,ccond)
+
+    ! In ModelSpace, save the user paramType for output
+    userParamType = paramType
+
+    ! ALWAYS convert modelParam to natural log for computations
+    paramType = 'LOGE'
+    call setType_modelParam(m,paramType)
+    call deall_rscalar(ccond)
+
+end subroutine read_modelParam_hdf5
+
 subroutine read_geometry_hdf5(file_id, grid, airlayers)
 
+    ! Given an open HDF5 file_id, and a unallocated grid and initalized airLayers,
+    ! read in the cell centers of the HDF5 file it will also
+    ! attempt to read the model origin (x, y, z) coordinates and then
+    ! it will calculate dx, dy, dz based on the cell centers and model origin.
+    !
+    ! At the end of this routine, the grid will be fully allocated and
+    ! initailzed and ready to perfrom computations.
+
+    implicit none
+
     integer(kind=HID_T), intent(in) :: file_id
-    type (grid_t) , intent(inout) :: grid
+    type (grid_t) , intent(out) :: grid
     type (airLayers_t), intent(inout) :: airLayers
 
     integer(kind=HSIZE_T), dimension(1) :: dim1d
 
     character(80) :: someChar=''
     character(80) :: paramType=''
-    real(kind=prec), dimension(1), allocatable :: xctr(:)
-    real(kind=prec), dimension(1), allocatable :: yctr(:)
-    real(kind=prec), dimension(1), allocatable :: zctr(:)
+    real(kind=prec), dimension(:), allocatable :: xctr
+    real(kind=prec), dimension(:), allocatable :: yctr
+    real(kind=prec), dimension(:), allocatable :: zctr
 
     integer(kind=HSIZE_T) :: nx, ny, nz
     integer  :: grid_x, grid_y, grid_z, NzAir, i, j, k
-    real(kind=prec) :: origin_x, origin_y, origin_z
-    real(kind=prec) :: origin(3)
+    real(kind=prec) :: model_origin_x, model_origin_y, model_origin_z
+    real(kind=prec) :: model_rotation_angle
+
+    character (len=512) :: model_rotation_units
 
     integer (kind=HID_T) :: x_dset_id, y_dset_id, z_dset_id
     integer (kind=HID_T) :: x_dspace_id, y_dspace_id, z_dspace_id
-
-    integer (kind=HID_T) :: group_id
 
     ! Read x
     call ModEM_HDF5_open_dataset(file_id, "x", x_dset_id)
@@ -477,45 +453,47 @@ subroutine read_geometry_hdf5(file_id, grid, airlayers)
     call ModEM_HDF5_close_dataset(z_dset_id)
     call ModEM_HDF5_close_dataspace(z_dspace_id)
 
-    ! Read origin attributes
-    call ModEM_HDF5_open_group(file_id, "/", group_id)
+    ! Allocate the grid
+    call create_grid(int(nx, kind=4), int(ny, kind=4), airLayers % nz, int(nz, kind=4), grid)
 
-    call ModEM_HDF5_read_attr(group_id, 'model_origin_x', origin_x)
-    call ModEM_HDF5_read_attr(group_id, 'model_origin_y', origin_y)
-    call ModEM_HDF5_read_attr(group_id, 'model_origin_z', origin_z)
+    ! Read model origin and rotation attributes from the HDF5 file
+    if (ModEM_HDF5_attr_exists(file_id, 'model_origin_x')) then
+        call ModEM_HDF5_read_attr(file_id, 'model_origin_x', model_origin_x)
+    else
+        call errStop('Attribute model_origin_x does not exist in the HDF5 file.')
+    end if
 
-    call ModEM_HDF5_close_group(group_id)
+    if (ModEM_HDF5_attr_exists(file_id, 'model_origin_y')) then
+        call ModEM_HDF5_read_attr(file_id, 'model_origin_y', model_origin_y)
+    else
+        call errStop('Attribute model_origin_y does not exist in the HDF5 file.')
+    end if
 
-    ! set origin values in the grid structure
-    origin(1) = origin_x
-    origin(2) = origin_y
-    origin(3) = origin_z
+    if (ModEM_HDF5_attr_exists(file_id, 'model_origin_z')) then
+        call ModEM_HDF5_read_attr(file_id, 'model_origin_z', model_origin_z)
+    else
+        call errStop('Attribute model_origin_z does not exist in the HDF5 file.')
+    end if
 
-    ! Setup grid
-    grid_x = nx
-    grid_y = ny
-    grid_z = nz
-    nzAir = airLayers%Nz
-    write(0,*) "Grid is: ", grid_x, " x ", grid_y, " x ", grid_z, " (NzAir = ", nzAir, ")"
-    call create_grid(grid_x, grid_y, nzAir, grid_z, grid)
+    if (ModEM_HDF5_attr_exists(file_id, 'model_rotation_angle')) then
+        call ModEM_HDF5_read_attr(file_id, 'model_rotation_angle', model_rotation_angle)
+    else
+        call errStop('Attribute model_rotation does not exist in the HDF5 file.')
+    end if
 
-    ! Read grid spacing from GridSpacing group (like WS reads from file)
-    call ModEM_HDF5_open_group(file_id, "/GridSpacing", group_id)
-    
-    call ModEM_HDF5_open_dataset(group_id, "Dx", x_dset_id)
-    call ModEM_HDF5_read_dataset(x_dset_id, H5T_NATIVE_DOUBLE, grid%dx)
-    call ModEM_HDF5_close_dataset(x_dset_id)
-    
-    call ModEM_HDF5_open_dataset(group_id, "Dy", y_dset_id)
-    call ModEM_HDF5_read_dataset(y_dset_id, H5T_NATIVE_DOUBLE, grid%dy)
-    call ModEM_HDF5_close_dataset(y_dset_id)
-    
-    ! Read only Earth layers for Dz (like WS format), air layers added by update_airlayers
-    call ModEM_HDF5_open_dataset(group_id, "Dz", z_dset_id)
-    call ModEM_HDF5_read_dataset(z_dset_id, H5T_NATIVE_DOUBLE, grid%dz(grid%nzAir+1:grid%nzAir+grid%nzEarth))
-    call ModEM_HDF5_close_dataset(z_dset_id)
-    
-    call ModEM_HDF5_close_group(group_id)
+    if (ModEM_HDF5_attr_exists(file_id, 'model_rotation_units')) then
+        call ModEM_HDF5_read_attr(file_id, 'model_rotation_units', model_rotation_units)
+    else
+        call errStop('Attribute model_rotation_units does not exist in the HDF5 file.')
+    end if
+
+    grid%rotdeg = model_rotation_angle
+
+    ! Calculate grid spacing from cell centers
+    call calculate_grid_spacing_from_centers(model_origin_x, xctr, grid%dx)
+    call calculate_grid_spacing_from_centers(model_origin_y, yctr, grid%dy)
+    call calculate_grid_spacing_from_centers(model_origin_z, zctr, &
+        grid%dz(grid%nzAir+1:grid%nzAir+grid%nzEarth))
 
     ! Now, finish set up of the air layers structure using the grid
     call setup_airlayers(airLayers,grid)
@@ -523,14 +501,73 @@ subroutine read_geometry_hdf5(file_id, grid, airlayers)
     ! Finally, insert correct air layers in the grid
     call update_airlayers(grid,airLayers%Nz,airLayers%Dz)
 
-    ! Set grid origin directly (to match WS format behavior - no setup_grid call)
-    grid%ox = -origin_x
-    grid%oy = -origin_y
-    grid%oz = -origin_z
+    ! Preserve origin exactly as stored in file attributes.
+    grid%ox = model_origin_x
+    grid%oy = model_origin_y
+    grid%oz = model_origin_z
 
-    call setup_grid(grid, origin)  ! Ensure grid is fully set up after reading in values
+    ! Recompute centers/edges using the stored grid origin.
+    call setup_grid(grid)
 
 end subroutine read_geometry_hdf5
+
+subroutine read_sigma_hdf5(file_id, grid, sigma, paramType)
+
+    ! Read in electrical conductivity from the file and store sigma in a rscalar variable
+    ! note that this rscalar variable after reading this variable will still be conductivity
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: file_id
+    type (grid_t), intent(in) :: grid
+    type (rscalar), intent(inout) :: sigma
+    character(80), intent(out) :: paramType
+
+    real (kind=prec), dimension(:,:,:), pointer :: sigma_read
+
+    integer (kind=HID_T) :: dset_id, dspace_id
+    integer :: i, j, k
+
+    ! Read sigma from the HDF5 file
+    ! TODO we will need a way to handle different variable names for sigma, as I have
+    ! seen log10sigma, sigma, log10_sigma, etc.
+    call ModEM_HDF5_open_dataset(file_id, "sigma", dset_id)
+    call ModEM_HDF5_get_dataspace(dset_id, dspace_id)
+
+    allocate(sigma_read(grid % ny, grid % nx, grid%nzEarth))
+    call ModEM_HDF5_read_dataset(dset_id, H5T_NATIVE_DOUBLE, sigma_read)
+
+    ! Read sigma into a temporary array, then transpose it into sigma%v
+    ! Inverse mapping of write_sigma_hdf5 loop: (Ny, Nx, NzEarth) -> (Nx, Ny, NzEarth)
+    do k = 1, grid % NzEarth
+        do j = 1, grid % ny
+            do i = 1, grid % nx
+                sigma % v(i,j,k) = sigma_read(j,i,k)
+            end do
+        end do
+    end do
+
+    ! Set ParamType to be used when reading conductivity values
+    ! Read the paramater type from the HDF5 file attributes, if available. If not, default to LOG10.
+    if (ModEM_HDF5_attr_exists(dset_id, 'paramType')) then
+        call ModEM_HDF5_read_attr(dset_id, 'paramType', paramType)
+        call clean_null_term_string(paramType)
+    else
+        paramType = 'LOG10'
+    end if
+
+    if ((index(paramType,'LOGE')>0) .or. (index(paramType,'LOG10')>0)) then
+        sigma%v = - sigma%v
+    else if (index(paramType,'LINEAR')>0) then
+        sigma%v = ONE/sigma%v
+    end if
+
+    call ModEM_HDF5_close_dataspace(dspace_id)
+    call ModEM_HDF5_close_dataset(dset_id)
+
+    deallocate(sigma_read)
+
+end subroutine read_sigma_hdf5
 
 #endif
 

@@ -1,6 +1,7 @@
 module ModEM_HDF5
 
     use hdf5
+    use h5ds
     use utilities
     use math_constants
 
@@ -28,6 +29,7 @@ module ModEM_HDF5
         module procedure ModEM_HDF5_add_attr_string
         module procedure ModEM_HDF5_add_attr_int
         module procedure ModEM_HDF5_add_attr_int_1D_HID
+        module procedure ModEM_HDF5_add_attr_real
         module procedure ModEM_HDF5_add_attr_real_double
         module procedure ModEM_HDF5_add_attr_real_1D
         module procedure ModEM_HDF5_add_attr_real_double_2D
@@ -36,6 +38,7 @@ module ModEM_HDF5
     interface ModEM_HDF5_read_attr
         module procedure ModEM_HDF5_read_attr_string
         module procedure ModEM_HDF5_read_attr_int
+        module procedure ModEM_HDF5_read_attr_real
         module procedure ModEM_HDF5_read_attr_real_double
         module procedure ModEM_HDF5_read_attr_real_1D
         module procedure ModEM_HDF5_read_attr_real_double_2D
@@ -89,6 +92,19 @@ subroutine ModEM_HDF5_finalize()
 #endif
 
 end subroutine ModEM_HDF5_finalize
+
+subroutine ModEM_HDF5_get_version(version_str)
+
+    implicit none
+
+    character(*), intent(out) :: version_str
+
+    integer :: majnum, minnum, relnum, error
+
+    call h5get_libversion_f(majnum, minnum, relnum, error)
+    write(version_str, '(I0,".",I0,".",I0)') majnum, minnum, relnum
+
+end subroutine ModEM_HDF5_get_version
 
 subroutine ModEM_HDF5_open(fname, file_id, mode, hdferr)
 
@@ -401,6 +417,123 @@ subroutine ModEM_HDF5_get_dataspace_dims(dspace_id, dims, maxdims, rank, hdferr)
 
 end subroutine ModEM_HDF5_get_dataspace_dims
 
+! Make an HDF5 dataset a dimemsion in the eyes of NetCDF4. 
+subroutine ModEM_HDF5_make_dataset_dimension(dset_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    integer (kind=HID_T) :: type_id, attr_dspace_id, class_attr_id, class_dspace_id
+    integer (kind=size_t) :: str_len
+
+    integer(hsize_t), dimension(1) :: dim = (/ 1 /)
+
+    raise_error = present(hdferr)
+
+    call h5tcopy_f(H5T_NATIVE_CHARACTER, type_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when copying type in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    str_len = 15
+    call h5tset_size_f(type_id, str_len, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when setting type size in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5screate_f(H5S_SCALAR_F, attr_dspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating scalar dataspace in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5screate_f(H5S_SCALAR_F, class_dspace_id, hdferr_lcl)
+    call h5acreate_f(dset_id, "CLASS", type_id, class_dspace_id, class_attr_id, hdferr_lcl)
+    call h5awrite_f(class_attr_id, type_id, DIMENSION_SCALE_CLASS, dim, hdferr_lcl)
+
+    call h5aclose_f(class_attr_id, hdferr_lcl)
+    call h5sclose_f(class_dspace_id, hdferr_lcl)
+    call h5tclose_f(type_id, hdferr_lcl)
+
+end subroutine ModEM_HDF5_make_dataset_dimension
+
+subroutine ModEM_HDF5_attach_dim(loc_id, dim_name, dset_id, dim, hdferr)
+    
+    integer (kind=HID_T), intent(in) :: loc_id
+    character(len=*), intent(in) :: dim_name
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer, intent(in) :: dim
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: dim_dset_id
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    call h5dopen_f(loc_id, dim_name, dim_dset_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when opening dimension dataset in ModEM_HDF5_attach_dim"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5dsattach_scale_f(dset_id, dim_dset_id, dim, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when attaching dimension in ModEM_HDF5_attach_dim"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5dclose_f(dim_dset_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when closing dimension dataset in ModEM_HDF5_attach_dim"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_attach_dim
+
 subroutine ModEM_HDF5_get_dataset_type(dset_id, type_id, hdferr)
 
     implicit none
@@ -474,7 +607,7 @@ subroutine ModEM_HDF5_close_dataspace(dspace_id, hdferr)
             hdferr = hdferr_lcl
             return
         else 
-            write(0,*) "ERROR: HDF5 Error when creating data space in ModEM_HDF5_create_dataspace"
+            write(0,*) "ERROR: HDF5 Error when closing data space in ModEM_HDF5_close_dataspace"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
@@ -518,7 +651,6 @@ subroutine ModEM_HDF5_create_string_type(type_id, str_len, hdferr)
             call ModEM_abort()
         end if
     end if
-
 
 end subroutine ModEM_HDF5_create_string_type
 
@@ -591,8 +723,6 @@ subroutine ModEM_HDF5_create_dataset(loc_id, dataset_name, type, dspace_id, dset
     integer :: hdferr_lcl
 
     raise_error = present(hdferr)
-
-    write(0,*) 'Dataset name: ', trim(dataset_name)
 
     call h5dcreate_f(loc_id, trim(dataset_name), type, dspace_id, dset_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
@@ -1107,6 +1237,8 @@ end subroutine ModEM_HDF5_read_dataset_real_double_3D
 
 subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
 
+    use iso_c_binding, only : c_null_char
+
     implicit none
 
     integer (kind=HID_T), intent(in) :: loc_id
@@ -1119,12 +1251,14 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
 
     integer (kind=HID_T) :: aspace_id, atype_id, attr_id
     integer (HSIZE_T) :: admins(1)
+    character(len=:), allocatable :: attr_value_c
 
     raise_error = present(hdferr)
 
     ! Create Fortran string type that matches the size of our string
     admins = [1_hsize_t]
-    call h5screate_simple_f(1, admins, aspace_id, hdferr_lcl)
+    !call h5screate_simple_f(1, admins, aspace_id, hdferr_lcl)
+    call h5screate_f(H5S_SCALAR_F, aspace_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -1136,7 +1270,7 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
         end if
     end if
 
-    call h5tcopy_f(H5T_FORTRAN_S1, atype_id, hdferr_lcl)
+    call h5tcopy_f(H5T_C_S1, atype_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -1148,13 +1282,27 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
         end if
     end if
 
-    call h5tset_size_f(atype_id, len_trim(attr_value, kind=HSIZE_T), hdferr_lcl)
+    attr_value_c = trim(attr_value) // c_null_char
+
+    call h5tset_size_f(atype_id, len(attr_value_c, kind=HSIZE_T), hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
             return
         else 
             write(0,*) "ERROR: HDF5 Error when calling h5tset_size in ModEM_HDF5_add_attr_string"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5tset_strpad_f(atype_id, H5T_STR_NULLTERM_F, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5tset_strpad_f in ModEM_HDF5_add_attr_string"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
@@ -1174,13 +1322,25 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
     end if
 
     ! Write the attribute
-    call h5awrite_f(attr_id, atype_id, attr_value, admins, hdferr_lcl)
+    call h5awrite_f(attr_id, atype_id, attr_value_c, admins, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
             return
         else 
             write(0,*) "ERROR: HDF5 Error when calling h5awrite_f in ModEM_HDF5_add_attr_string"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5tclose_f(atype_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5tclose_f in ModEM_HDF5_add_attr_string"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
@@ -1381,6 +1541,89 @@ subroutine ModEM_HDF5_add_attr_int_1D_HID(loc_id, attr_name, attr_value, hdferr)
 
 end subroutine ModEM_HDF5_add_attr_int_1D_HID
 
+subroutine ModEM_HDF5_add_attr_real(loc_id, attr_name, attr_value, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: attr_name
+    real, target :: attr_value
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: aspace_id, attr_id
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: attr_value_ptr
+
+    raise_error = present(hdferr)
+
+    call h5screate_simple_f(rank(attr_value), shape(attr_value, kind=HSIZE_T), aspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5screate_simple_f in ModEM_HDF5_add_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5acreate_f(loc_id, attr_name, H5T_NATIVE_REAL, aspace_id, attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5acreate_f in ModEM_HDF5_add_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    attr_value_ptr = c_loc(attr_value)
+
+    call h5awrite_f(attr_id, H5T_NATIVE_REAL, attr_value_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5awrite_f in ModEM_HDF5_add_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5aclose_f(attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5aclose_f in ModEM_HDF5_add_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5sclose_f(aspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5sclose_f in ModEM_HDF5_add_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_add_attr_real
 
 subroutine ModEM_HDF5_add_attr_real_double(loc_id, attr_name, attr_value, hdferr)
 
@@ -1634,6 +1877,36 @@ subroutine ModEM_HDF5_add_attr_real_double_2D(loc_id, attr_name, attr_value, hdf
 
 end subroutine ModEM_HDF5_add_attr_real_double_2D
 
+function ModEM_HDF5_attr_exists(loc_id, attr_name, hdferr) result(is_present)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: attr_name
+    integer, optional, intent(out) :: hdferr
+
+    integer :: hdferr_lcl
+
+    logical :: is_present
+    logical :: raise_error
+
+    raise_error = present(hdferr)
+
+    is_present = .false.
+
+    ! Check if the attribute exists
+    call h5aexists_f(loc_id, attr_name, is_present, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5aexists_f in ModEM_HDF5_attr_exists"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end function ModEM_HDF5_attr_exists
 
 subroutine ModEM_HDF5_read_attr_string(loc_id, attr_name, attr_value, hdferr)
 
@@ -1769,6 +2042,69 @@ subroutine ModEM_HDF5_read_attr_int(loc_id, attr_name, attr_value, hdferr)
     end if
 
 end subroutine ModEM_HDF5_read_attr_int
+
+subroutine ModEM_HDF5_read_attr_real(loc_id, attr_name, attr_value, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: attr_name
+    real, target, intent(out) :: attr_value
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: attr_id
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: attr_value_ptr
+
+    raise_error = present(hdferr)
+
+    ! Open the attribute
+    call h5aopen_f(loc_id, attr_name, attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5aopen_f in ModEM_HDF5_read_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    attr_value_ptr = c_loc(attr_value)
+
+    ! Read the attribute
+    call h5aread_f(attr_id, H5T_NATIVE_REAL, attr_value_ptr, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5aread_f in ModEM_HDF5_read_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    ! Close the attribute
+    call h5aclose_f(attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when calling h5aclose_f in ModEM_HDF5_read_attr_real"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_read_attr_real
 
 subroutine ModEM_HDF5_read_attr_real_double(loc_id, attr_name, attr_value, hdferr)
 
