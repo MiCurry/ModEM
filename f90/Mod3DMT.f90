@@ -65,13 +65,19 @@ program Mod3DMT
       write(6,*)'I am a SERIAL version'
 #endif
 
-      call ModEM_setup_IO(cUserDef % data_input_ftype, cUserDef % data_output_ftype, &
-                    cUserDef % model_input_ftype, cUserDef % model_output_ftype)
- 
+      call ModEM_setup_IO(cUserDef % data_input_format, cUserDef % data_output_format, & ! Data Type
+                          cUserDef % model_input_format, cUserDef % model_output_format) ! Model Type
+
       call initGlobalData(cUserDef)
       ! set the grid for the numerical computations
 #ifdef MPI
-      call setGrid_MPI(grid)
+    call setGrid_MPI(grid)
+
+    call EsMgr_init(grid, context=modem_ctx, &
+                          save_in_file=cUserDef % storeSolnsInFile, &
+                          prefix=cUserDef % prefix, &
+                          ftype=FTYPE_BINARY)
+
     ! Check if a large grid file with E field is defined:
     ! NOTE: right now both grids share the same transmitters.
     ! This why, reading and setting the large grid and its E solution comes after setting the trasnmitters Dictionary.

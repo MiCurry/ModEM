@@ -8,29 +8,13 @@ Modular Electromagnetic Inversion Software (ModEM)
 
 [![DOI](https://zenodo.org/badge/1025134680.svg)](https://doi.org/10.5281/zenodo.17229555)
 
-[ModEM Documentation](https://magnetotellurics.github.io/ModEM/)
 
-> **NOTE:** This repository has been converted from the ModEM's OSU CEOAS Subversion
-> (SVN) repository. SVN revisions have been preserved and converted into Git
-> commits. Some main branches have been renamed:
->
-> | SVN Branch Name | GitHub Branch Name |
-> | --------------- | -------------------|
-> | trunk           | [trunk][trunk-branch] |
-> | stable-         | [main][main-branch] |
-> | stable          | [classic][classic-branch] |
->
-> Furthermore, the `matlab` and `examples` directory have been moved into the
-> [ModEM-Tools][ModEM-Tools] and [ModEM-Examples][ModEM-Examples] repositories,
-> respectively.
-
-[trunk-branch]: https://github.com/magnetotellurics/ModEM/tree/trunk
-[main-branch]: https://github.com/magnetotellurics/ModEM/tree/main
-[classic-branch]: https://github.com/magnetotellurics/ModEM/tree/classic
 
 # Contents
 
 * [Obtaining The Software](#obtaining-the-software)
+    * [Branches](#branches)
+    * [ModEM Documentation](#modem-documentation)
 * [Building ModEM](#building-modem)
     * [Dependencies](#dependencies)
     * [Creating Makefiles From Configuration files](#creating-makefiles-from-configuration-files)
@@ -69,6 +53,41 @@ instructions][GitHub-Download-Tutorial] provided by GitHub. Please note though
 that these downloads do not contain any git repository history or information.
 
 [GitHub-Download-Tutorial]:https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives
+
+## Branches
+
+ModEM currently has two branches used for development:
+
+* [main][main-branch] - The main branch that holds the latest release of ModEM and is more
+  stable then develop.
+* [develop][develop-branch] - The branch that contains the newest code, that may be less stable
+  than main and may contain bugs.
+ 
+
+> **NOTE:** This repository has been converted from the ModEM's OSU CEOAS Subversion
+> (SVN) repository. SVN revisions have been preserved and converted into Git
+> commits. Some main branches have been renamed:
+>
+> | SVN Branch Name | GitHub Branch Name |
+> | --------------- | -------------------|
+> | stable-         | [main][main-branch] |
+> | stable          | [classic][classic-branch] |
+>
+> Furthermore, the `matlab` and `examples` directory have been moved into the
+> [ModEM-Tools][ModEM-Tools] and [ModEM-Examples][ModEM-Examples] repositories,
+> respectively.
+
+[trunk-branch]: https://github.com/magnetotellurics/ModEM/tree/trunk
+[main-branch]: https://github.com/magnetotellurics/ModEM/tree/main
+[classic-branch]: https://github.com/magnetotellurics/ModEM/tree/classic
+
+[main-branch]: https://github.com/magnetotellurics/ModEM/
+[develop-branch]: https://github.com/magnetotellurics/ModEM/tree/develop
+
+## ModEM Documentation
+
+The ModEM Documentation can now be found online at:
+https://magnetotellurics.github.io/ModEM/.
 
 # Building ModEM
 
@@ -452,5 +471,6 @@ issues/bugs/questions and pull requests.
 
 For bugs, issues and questions, please open a GitHub Issue on this Repository.
 
-Please feel free to open a pull request with any changes. We do not guarantee
-changes will be merged in, but we welcome all contributions.
+Please feel free to open a pull request with any changes against the develop
+branch. We do not guarantee changes will be merged in, but we welcome all
+contributions.
