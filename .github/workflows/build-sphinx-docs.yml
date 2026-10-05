@@ -6,6 +6,9 @@ on:
         - main
         - develop
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,7 +27,9 @@ jobs:
           cp -r ./* out_dist/ || true
         else
           mkdir -p out_dist/${{ github.ref_name }}
-          cp -r ./* out_dist/${{ github.ref_name }}/ || true
+          cd ./out_dist/${{ github.ref_name }}
+          cp -r ../* out_dist/${{ github.ref_name }}/ || true
+          cd ..
         fi
 
         # Clean up the output folder from copying itself if necessary
