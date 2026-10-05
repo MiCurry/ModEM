@@ -73,6 +73,7 @@
 <li><a class="reference internal" href="#including-topography">Including Topography</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#converting-between-data-and-model-file-formats">Converting Between Data and Model File Formats</a></li>
 </ul>
 </li>
 </ul>
@@ -383,19 +384,28 @@ The second format is identical to that used for 3D models in WingLink (referred
 to in the ModEM code, perhaps inappropriately, as the “Mackie format”.) These
 two formats are similar, but not identical. At present switching between these
 model formats requires editing and recompiling the program.</p>
-<p>(For completeness here is a very brief summary of the modifications required:
-read routines are in <code class="docutils literal notranslate"><span class="pre">f90/3D_MT/modelParam/modelParamIO/*.inc</span></code>.  All of these
-files are included in the compiled ModelSpace module (with compiler directives
-<code class="docutils literal notranslate"><span class="pre">#include</span></code>). The names of the read and write routines are
-<code class="docutils literal notranslate"><span class="pre">read_modelParam_WS(mackie)</span></code> and similarly for write. The read/write routines
-in use are overloaded on <code class="docutils literal notranslate"><span class="pre">read_modelParam</span></code> (and similarly for the write
-routine; this is done in <code class="docutils literal notranslate"><span class="pre">f90/3D_MT/modelParam/ModelSpace.f90</span></code>), and calls to
-these generic read/write subroutines are then used in the program to input or
-output model parameter objects. Both the “WS” and “Mackie” read/write routines
-(and others that one might want to implement) must have identical interfaces.
-Then, by changing the names of routine overloaded in the <code class="docutils literal notranslate"><span class="pre">ModelSpace</span></code>
-interface, the expected file format used for model parameter I/O is changed.
-Yes, better approaches could be imagined!)</p>
+<p>ModEM can now switch between model file formats easily by using the optional
+ModEM Namelist. To do so, genearte the ModEM namelist by running a ModEM
+executable with -N:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ ./Mod3DMT -N
+</pre></div>
+</div>
+<p>Then, in the IO section of ModEM, change the <code class="docutils literal notranslate"><span class="pre">model_input_format</span></code> (or
+<code class="docutils literal notranslate"><span class="pre">model_output_format</span></code>) to your desired format:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>&amp;io
+     data_input_format = &#39;ASCII&#39;
+     data_output_format = &#39;ASCII&#39;
+     model_input_format = &#39;RM&#39;
+     model_output_format = &#39;WS&#39;
+     efield_input_format = &#39;binary&#39;
+     efield_output_format = &#39;binary&#39;
+ /
+</pre></div>
+</div>
+<p>The above namelist IO section will then set ModEM to read in a Randall Mackie
+(‘RM’) format.</p>
+<p>Please see <a class="reference internal" href="modem_namelist.html#modem-namelist"><span class="std std-ref">ModEM Namelist - Additional Settings</span></a> and <a class="reference internal" href="#converting-file-formats"><span class="std std-ref">Converting Between Data and Model File Formats</span></a> for more
+information.</p>
 <p>Both of the currently supported model file formats begin with a description of
 the tensor-product Cartesian grid: cell dimensions in <code class="docutils literal notranslate"><span class="pre">x</span></code>, <code class="docutils literal notranslate"><span class="pre">y</span></code>, and <code class="docutils literal notranslate"><span class="pre">z</span></code>
 are given (in meters, i.e., <code class="docutils literal notranslate"><span class="pre">∆xi,i</span> <span class="pre">=</span> <span class="pre">1,...,Nx;</span> <span class="pre">∆yi,i</span> <span class="pre">=</span> <span class="pre">1,...,Ny</span> <span class="pre">;</span> <span class="pre">∆zi,i</span> <span class="pre">=</span>
@@ -649,7 +659,7 @@ ENDDO
 indicating that the regions extend over all 11 layers (top-to-bottom) of this
 very small grid.</p>
 <div class="section" id="h2-bi-helmholtz-covariance-covtype-2">
-<h3>H2 (Bi-Helmholtz) Covariance (CovType=2)<a class="headerlink" href="#h2-bi-helmholtz-covariance-covtype-2" title="Permalink to this headline">¶</a></h3>
+<span id="h2-covariance-type"></span><h3>H2 (Bi-Helmholtz) Covariance (CovType=2)<a class="headerlink" href="#h2-bi-helmholtz-covariance-covtype-2" title="Permalink to this headline">¶</a></h3>
 <p>ModEM now supports an alternative regularization method based on the
 H2 (Bi-Helmholtz) operator, which provides isotropic smoothing with a
 (Matérn) covariance structure.</p>
@@ -929,6 +939,41 @@ levels consistently in the model and data files.  Again, using tools for model
 and data file setup (such as Grid3D) can help ensure consistency–if these are
 used correctly!</p>
 </div>
+</div>
+<div class="section" id="converting-between-data-and-model-file-formats">
+<span id="converting-file-formats"></span><h2>Converting Between Data and Model File Formats<a class="headerlink" href="#converting-between-data-and-model-file-formats" title="Permalink to this headline">¶</a></h2>
+<p>It can be useful to convert between different file formats. This can be easily
+done with ModEM by using the optional ModEM namelist and using the
+<code class="docutils literal notranslate"><span class="pre">-R</span></code>/Read-write command line argument.</p>
+<p>For instance, we can use this method to convert between Weerachai
+Siripunvaraporn’s WSINV3DMT (WS) and Randall Mackie’s format (RM):</p>
+<p>First, generate the ModEM namelist by running ModEM with -N:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ ./Mod3DMT_SP2 -N
+</pre></div>
+</div>
+<p>This will generate a ModEM namelist file named <code class="docutils literal notranslate"><span class="pre">modem.namelist.nl</span></code>. We can
+edit the <code class="docutils literal notranslate"><span class="pre">model_input_format</span></code> and <code class="docutils literal notranslate"><span class="pre">model_output_format</span></code> in the <code class="docutils literal notranslate"><span class="pre">io</span></code>
+section of the namelist to specify that we want ModEM to read in a WS model
+file and writeout a RM file:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>&amp;io
+     data_input_format = &#39;ASCII&#39;
+     data_output_format = &#39;ASCII&#39;
+     model_input_format = &#39;WS&#39;
+     model_output_format = &#39;RW&#39;
+     efield_input_format = &#39;binary&#39;
+     efield_output_format = &#39;binary&#39;
+ /
+</pre></div>
+</div>
+<p>Then, we can run ModEM with -R to convert our model file from WS to RM:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$ ./Mod3DMT_SP2 -R model.ws de.dat model.rm de.out
+</pre></div>
+</div>
+<p>The output file <code class="docutils literal notranslate"><span class="pre">model.rm</span></code> will then be in the Randal Mackie (RM) format.</p>
+<p>Of course, this can also be used to convert data files in a similar manner.
+Furthermore, these options apply to any ModEM option. So, if desired, one could
+read in a WS file for an inversion, and then write all inversion model output
+as RM.</p>
 </div>
 </div>
 
