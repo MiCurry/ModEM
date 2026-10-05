@@ -22,10 +22,17 @@ jobs:
       with:
         name: html-docs
         path: docs/build/html/
+    - name: Determine Destination Directory
+      run: |
+        if [ "${{ github.ref_name }}" = "main" ]; then
+          echo "DEPLOY_DEST=" >> $GITHUB_ENV
+        else
+          echo "DEPLOY_DEST=${{ github.ref_name }}" >> $GITHUB_ENV
+        fi
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: docs/build/html
-        destination_dir: ${{ github.ref_name == 'main' && '' || github.ref_name }}
-        keep_files: true # Prevents wiping the rest of the gh-pages branch
+        destination_dir: ${{ env.DEPLOY_DEST }}
+        keep_files: true
