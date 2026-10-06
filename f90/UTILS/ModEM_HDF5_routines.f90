@@ -1102,7 +1102,13 @@ subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf
 
 
     call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
-    call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
+    call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, &
+                    file_space_id=fspace_id, mem_space_id=memspace_id)
+    if (hdferr_lcl /= 0) then
+        write(0,*) "ERROR: real-part write failed in ModEM_HDF5_write_dataset_complex_real"
+        call h5eprint_f(h5e_default_f, hdferr_lcl)
+        call ModEM_abort()
+    end if
 
     write(0,*) "DONE WRITING THE FIRST"
     start = [1_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
@@ -1110,7 +1116,13 @@ subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf
     write(0,*) "Start: ", start
     write(0,*) "Count: ", count
     call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
-    call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
+    call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, &
+                    file_space_id=fspace_id, mem_space_id=memspace_id)
+    if (hdferr_lcl /= 0) then
+        write(0,*) "ERROR: imag-part write failed in ModEM_HDF5_write_dataset_complex_real"
+        call h5eprint_f(h5e_default_f, hdferr_lcl)
+        call ModEM_abort()
+    end if
 
 end subroutine ModEM_HDF5_write_dataset_complex_real
 

@@ -413,24 +413,22 @@ contains
              form = 'unformatted'
          end if
 
-         if (ftype_lcl == 'hdf5') then
-            call write_solnVector_hdf5(e, prefix, pol_index_lcl)
-         else 
-            fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))))
-            open(newunit=fid, file=trim(fname), action='write', form=form, status='replace', &
-                  iostat=iostat, iomsg=iomsg)
-            if (iostat /= 0) then
-               write(0,'(A, A, A)') "ERROR: There was an issue when opening: '", trim(fname), "' for writing:"
-               write(0,'(A, A)') "ERROR: Reason: ", trim(iomsg)
-               call ModEM_abort()
-            end if
+         call write_solnVector_hdf5(e, prefix, pol_index_lcl)
 
-            write(6, '(A, i4.4, A, A, A, A)') "Saving electric solution for Tx: ", e % tx, " pol: '", &
-               trim(e % pol_name(pol_index_lcl)), "' to file: ", trim(fname) 
-
-            call write_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
-            close(fid)
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))), '.cvec')
+         open(newunit=fid, file=trim(fname), action='write', form=form, status='replace', &
+               iostat=iostat, iomsg=iomsg)
+         if (iostat /= 0) then
+            write(0,'(A, A, A)') "ERROR: There was an issue when opening: '", trim(fname), "' for writing:"
+            write(0,'(A, A)') "ERROR: Reason: ", trim(iomsg)
+            call ModEM_abort()
          end if
+
+         write(6, '(A, i4.4, A, A, A, A)') "Saving electric solution for Tx: ", e % tx, " pol: '", &
+            trim(e % pol_name(pol_index_lcl)), "' to file: ", trim(fname) 
+
+         call write_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
+         close(fid)
 
      end subroutine write_solnVector
 
@@ -478,7 +476,7 @@ contains
              form = 'unformatted'
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)), '.cvec')
 
          if (.not. does_esoln_file_exist(e, prefix)) then
              write(0,*) "ERROR: The file for this solnVector_t (argument e) does not exist"
@@ -542,7 +540,7 @@ contains
          write(0,*) size(e % pol(pol_index_lcl) % y)
          write(0,*) size(e % pol(pol_index_lcl) % y)
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)), '.hdf5')
          vector => e % pol(pol_index_lcl)
 
          write(0,*) "Starting to write: ", trim(fname)
@@ -595,7 +593,7 @@ contains
 
          !dims_mem = (/2_HSIZE_T, size(vector % x, 1, kind=HSIZE_T), size(vector % x, 2, kind=/)
          dims_mem = [2_HSIZE_T, size(vector%x, 1, kind=HSIZE_T), size(vector % x, 2, kind=HSIZE_T), size(vector%x, 3, kind=HSIZE_T)]
-         call ModEM_HDF5_create_dataspace(rank(dims_mem), dims_mem, mem_space_id)
+         call ModEM_HDF5_create_dataspace(size(dims_mem), dims_mem, mem_space_id)
 
          write(0,*) 'Dims_mem: ', dims_mem
          write(0,*) 'x shape: ', shape(vector % x)
@@ -657,26 +655,23 @@ contains
              call ModEM_abort()
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)), '.cvec')
          inquire(file=trim(fname), exist=file_exists)
 
      end function does_esoln_file_exist
 
      !**********************************************************************
-     function construct_esoln_fname(prefix, iTx, pol_name) result(fname)
+     function construct_esoln_fname(prefix, iTx, pol_name, extension) result(fname)
 
        implicit none
 
        character(len=*), intent(in) :: prefix
        integer, intent(in) :: iTx
-       character(len=*), intent(in) :: pol_name
-       character(len=512)  :: fname
+         character(len=*), intent(in) :: pol_name
+         character(len=*), intent(in) :: extension
+         character(len=512)  :: fname
 
-#ifdef HDF5
-       write(fname, '(A, A, I4.4, A, A, A)') trim(prefix), '.iTx.', iTx, '.', trim(pol_name), '.hdf5'
-#else
-       write(fname, '(A, A, I4.4, A, A, A)') trim(prefix), '.iTx.', iTx, '.', trim(pol_name), '.cvec'
-#endif
+       write(fname, '(A, A, I4.4, A, A, A)') trim(prefix), '.iTx.', iTx, '.', trim(pol_name), trim(extension)
 
      end function construct_esoln_fname
 
