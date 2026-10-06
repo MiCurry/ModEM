@@ -192,10 +192,6 @@ end subroutine pack_userdef_control
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%search,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%option,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%prefix,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_input_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_output_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%model_input_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
-   call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%model_output_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)
 
    ! IO Options
    call MPI_Unpack(userdef_control_package, Nbytes, index, ctrl%data_input_format,80, MPI_CHARACTER,MPI_COMM_WORLD, ierr)

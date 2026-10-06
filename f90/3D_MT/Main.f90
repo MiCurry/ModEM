@@ -379,6 +379,8 @@ Contains
     if (data_input_type == DATA_FILE_TYPE_HDF5 .or. data_output_type == DATA_FILE_TYPE_HDF5 &
       .or. model_input_type == HDF5_FILE_TYPE .or. model_output_type == HDF5_FILE_TYPE) then
         call ModEM_HDF5_init()
+      else
+         call ModEM_HDF5_init()
     end if
 
   end subroutine ModEM_setup_IO

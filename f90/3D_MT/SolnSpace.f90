@@ -13,6 +13,10 @@ use sg_boundary
 use sg_sparse_vector
 use transmitters
 
+#ifdef HDF5
+use ModEM_HDF5
+#endif
+
 implicit none
 
 interface assignment (=)
@@ -402,25 +406,31 @@ contains
             form = 'unformatted'
          else if (ftype_lcl == 'ascii') then
             form = 'formatted'
+         else if (ftype_lcl == 'hdf5') then
+            form =' hdf5'
          else
              ftype_lcl = 'binary'
              form = 'unformatted'
          end if
 
-         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))))
-         open(newunit=fid, file=trim(fname), action='write', form=form, status='replace', &
-                iostat=iostat, iomsg=iomsg)
-         if (iostat /= 0) then
-             write(0,'(A, A, A)') "ERROR: There was an issue when opening: '", trim(fname), "' for writing:"
-             write(0,'(A, A)') "ERROR: Reason: ", trim(iomsg)
-             call ModEM_abort()
+         if (ftype_lcl == 'hdf5') then
+            call write_solnVector_hdf5(e, prefix, pol_index_lcl)
+         else 
+            fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(e % pol_index(pol_index_lcl))))
+            open(newunit=fid, file=trim(fname), action='write', form=form, status='replace', &
+                  iostat=iostat, iomsg=iomsg)
+            if (iostat /= 0) then
+               write(0,'(A, A, A)') "ERROR: There was an issue when opening: '", trim(fname), "' for writing:"
+               write(0,'(A, A)') "ERROR: Reason: ", trim(iomsg)
+               call ModEM_abort()
+            end if
+
+            write(6, '(A, i4.4, A, A, A, A)') "Saving electric solution for Tx: ", e % tx, " pol: '", &
+               trim(e % pol_name(pol_index_lcl)), "' to file: ", trim(fname) 
+
+            call write_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
+            close(fid)
          end if
-
-         write(6, '(A, i4.4, A, A, A, A)') "Saving electric solution for Tx: ", e % tx, " pol: '", &
-             trim(e % pol_name(pol_index_lcl)), "' to file: ", trim(fname) 
-
-         call write_cvector(fid, e % pol(pol_index_lcl), ftype_lcl)
-         close(fid)
 
      end subroutine write_solnVector
 
@@ -489,6 +499,134 @@ contains
 
      end subroutine read_solnVector
 
+     subroutine write_solnVector_HDF5(e, prefix, pol_index)
+
+         implicit none
+
+         type (solnVector_t), intent(in) :: e
+         character(len=*), intent(in) :: prefix
+         integer, optional, intent(in) :: pol_index
+
+         integer (kind=HID_T) :: file_id
+         integer :: pol_index_lcl
+
+         integer (HSIZE_T) :: dims_mem(4)
+
+         type (cvector), pointer :: vector
+
+         integer (kind=HID_T) :: xdim_dset_id, ydim_dset_id, zdim_dset_id
+         integer (kind=HID_T) :: xdim_dspace_id, ydim_dspace_id, zdim_dspace_id
+
+         integer (kind=HID_T) :: x_dspace_id, y_dspace_id, z_dspace_id
+         integer (kind=HID_T) :: xreal_dset_id, yreal_dset_id, zreal_dset_id
+         integer (kind=HID_T) :: ximag_dset_id, yimag_dset_id, zimag_dset_id
+
+         integer (kind=HID_T) :: mem_space_id
+         integer (kind=HID_T) :: root_group_id
+
+         character(len=512) :: fname
+         
+         if (present(pol_index)) then
+             pol_index_lcl = pol_index
+         else
+             pol_index_lcl = 1
+         end if
+
+
+         fname = construct_esoln_fname(prefix, e % tx, trim(e % pol_name(pol_index_lcl)))
+         vector => e % pol(pol_index_lcl)
+
+         write(0,*) "Starting to write: ", trim(fname)
+
+         call ModEM_HDF5_create_file(fname, H5F_ACC_TRUNC_F, file_id)
+
+         write(0,*) "write - 1"
+
+         call ModEM_HDF5_open_group(file_id, "/", root_group_id)
+
+
+         ! Write the dimensions x, y, z
+         call ModEM_HDF5_create_dataspace(rank(vector % grid % xCenter), (/size(vector % grid % xCenter, kind=HSIZE_T)/), xdim_dspace_id)
+         call ModEM_HDF5_create_dataspace(rank(vector % grid % yCenter), (/size(vector % grid % yCenter, kind=HSIZE_T)/), ydim_dspace_id)
+         call ModEM_HDF5_create_dataspace(rank(vector % grid % zCenter), (/size(vector % grid % zCenter, kind=HSIZE_T)/), zdim_dspace_id)
+
+         write(0,*) "write - 2"
+
+         call MODEM_HDF5_create_dataset(root_group_id, 'x', H5T_NATIVE_DOUBLE, xdim_dspace_id, xdim_dset_id)
+         write(0,*) "write - 2.1"
+         call MODEM_HDF5_create_dataset(root_group_id, 'y', H5T_NATIVE_DOUBLE, ydim_dspace_id, ydim_dset_id)
+         write(0,*) "write - 2.2"
+         call MODEM_HDF5_create_dataset(root_group_id, 'z', H5T_NATIVE_DOUBLE, zdim_dspace_id, zdim_dset_id) 
+
+         write(0,*) "write - 3"
+
+         ! Write dimensions to file
+         call ModEM_HDF5_write_dataset(xdim_dset_id, H5T_NATIVE_DOUBLE, vector % grid % xCenter)
+         call ModEM_HDF5_write_dataset(ydim_dset_id, H5T_NATIVE_DOUBLE, vector % grid % yCenter)
+         call ModEM_HDF5_write_dataset(zdim_dset_id, H5T_NATIVE_DOUBLE, vector % grid % zCenter)
+
+         write(0,*) "write - 4"
+         call ModEM_HDF5_close_dataset(xdim_dset_id)
+         call ModEM_HDF5_close_dataset(ydim_dset_id)
+         call ModEM_HDF5_close_dataset(zdim_dset_id)
+         write(0,*) "write - 5"
+
+         call ModEM_HDF5_close_dataspace(xdim_dspace_id)
+         call ModEM_HDF5_close_dataspace(ydim_dspace_id)
+         call ModEM_HDF5_close_dataspace(zdim_dspace_id)
+
+         write(0,*) "write - 6"
+
+         ! Creat the dataspace that will resprent what the arrays will look like in the will look like
+         call ModEM_HDF5_create_dataspace(rank(vector % x), (/size(vector % x, kind=HSIZE_T)/), x_dspace_id)
+         call ModEM_HDF5_create_dataspace(rank(vector % y), (/size(vector % y, kind=HSIZE_T)/), y_dspace_id)
+         call ModEM_HDF5_create_dataspace(rank(vector % z), (/size(vector % z, kind=HSIZE_T)/), z_dspace_id)
+
+
+         ! Create the memory space for what the arrays actually look like
+         write(0,*) "write - 7"
+
+         dims_mem = [2_HSIZE_T, size(vector % x, kind=HSIZE_T), &
+                        size(vector % y, kind=HSIZE_T), &
+                        size(vector % z, kind=HSIZE_T)]
+         call ModEM_HDF5_create_dataspace(rank(dims_mem), dims_mem, mem_space_id)
+
+         write(0,*) 'Dims_mem: ', dims_mem
+         write(0,*) "size of vector % x: ", size(vector % x, kind=HSIZE_T)
+         write(0,*) "write - 8"
+
+         ! Create the datasets
+         call ModEM_HDF5_create_complex_dataset(root_group_id, "x_real", "x_imag", x_dspace_id, xreal_dset_id, ximag_dset_id)
+         call ModEM_HDF5_create_complex_dataset(root_group_id, "y_real", "y_imag", y_dspace_id, yreal_dset_id, yimag_dset_id)
+         call ModEM_HDF5_create_complex_dataset(root_group_id, "z_real", "z_imag", z_dspace_id, zreal_dset_id, zimag_dset_id)
+
+         write(0,*) "write - 9"
+         call MOdEM_HDF5_write_dataset(xreal_dset_id, ximag_dset_id, vector % x, mem_space_id, x_dspace_id)
+         call MOdEM_HDF5_write_dataset(yreal_dset_id, yimag_dset_id, vector % y, mem_space_id, y_dspace_id)
+         call MOdEM_HDF5_write_dataset(zreal_dset_id, zimag_dset_id, vector % z, mem_space_id, z_dspace_id )
+
+         write(0,*) "write - 10"
+
+         call ModEM_HDF5_close_dataset(xreal_dset_id)
+         call ModEM_HDF5_close_dataset(ximag_dset_id)
+         call ModEM_HDF5_close_dataset(yreal_dset_id)
+         call ModEM_HDF5_close_dataset(yimag_dset_id)
+         call ModEM_HDF5_close_dataset(zreal_dset_id)
+         call ModEM_HDF5_close_dataset(zimag_dset_id)
+         write(0,*) "write - 11"
+         
+
+         call ModEM_HDF5_close_dataspace(x_dspace_id)
+         call ModEM_HDF5_close_dataspace(y_dspace_id)
+         call ModEM_HDF5_close_dataspace(z_dspace_id)
+
+         write(0,*) "write - 12"
+
+         call ModEM_HDF5_close_group(root_group_id)
+         call ModEM_HDF5_close_file(file_id)
+
+     end subroutine write_solnVector_HDF5
+
      !**********************************************************************
      function does_esoln_file_exist(e, prefix, pol_index) result(file_exists)
 
@@ -529,7 +667,11 @@ contains
        character(len=*), intent(in) :: pol_name
        character(len=512)  :: fname
 
+#ifdef HDF5
+       write(fname, '(A, A, I4.4, A, A, A)') trim(prefix), '.iTx.', iTx, '.', trim(pol_name), '.hdf5'
+#else
        write(fname, '(A, A, I4.4, A, A, A)') trim(prefix), '.iTx.', iTx, '.', trim(pol_name), '.cvec'
+#endif
 
      end function construct_esoln_fname
 

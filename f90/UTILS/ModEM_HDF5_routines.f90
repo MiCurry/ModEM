@@ -15,6 +15,7 @@ module ModEM_HDF5
         module procedure ModEM_HDF5_write_dataset_real_double_1D
         module procedure ModEM_HDF5_write_dataset_real_double_2D
         module procedure ModEM_HDF5_write_dataset_real_double_3D
+        module procedure ModEM_HDF5_write_dataset_complex_real
     end interface
 
     interface ModEM_HDF5_read_dataset
@@ -58,6 +59,11 @@ module ModEM_HDF5
 
     character (len=*), parameter :: DIMENSION_SCALE_CLASS = 'DIMENSION_SCALE'
 
+    integer :: FILE_CREATE_TRUNC_MODE
+    integer :: FILE_READ_ONLY_MODE 
+
+    integer :: MODEM_HID_T = HID_T
+
 contains
 
 subroutine ModEM_HDF5_init()
@@ -73,6 +79,9 @@ subroutine ModEM_HDF5_init()
         call h5eprint_f(h5e_default_f, hdferr)
         call ModEM_Abort()
     end if
+
+    FILE_CREATE_TRUNC_MODE = H5F_ACC_TRUNC_F
+    FILE_READ_ONLY_MODE = H5F_ACC_RDONLY_F
 
 end subroutine ModEM_HDF5_init
 
@@ -738,6 +747,54 @@ subroutine ModEM_HDF5_create_dataset(loc_id, dataset_name, type, dspace_id, dset
 
 end subroutine ModEM_HDF5_create_dataset
 
+subroutine ModEM_HDF5_create_complex_dataset(loc_id, real_dataset_name, imag_dataset_name, dspace_id, &
+        real_dset_id, imag_dset_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: real_dataset_name
+    character (len=*), intent(in) :: imag_dataset_name
+    integer (kind=HID_T), intent(in) :: dspace_id
+    integer (kind=HID_T), intent(out) :: real_dset_id
+    integer (kind=HID_T), intent(out) :: imag_dset_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    hdferr_lcl = 0
+
+    write(0,*) "Creating real part of complex dataset: ", trim(real_dataset_name)
+    call ModEM_HDF5_create_dataset(loc_id, trim(real_dataset_name), H5T_NATIVE_DOUBLE, dspace_id, real_dset_id)
+    write(0,*) 'Hdferr_lcl:', hdferr_lcl
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating real part of complex data set in ModEM_HDF5_create_complex_dataset"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call ModEM_HDF5_create_dataset(loc_id, imag_dataset_name, H5T_NATIVE_DOUBLE, dspace_id, imag_dset_id)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating imaginary part of complex data set in ModEM_HDF5_create_complex_dataset"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_create_complex_dataset
+
 subroutine ModEM_HDF5_close_dataset(dset_id, hdferr)
 
     implicit none
@@ -1016,6 +1073,40 @@ subroutine ModEM_HDF5_write_dataset_real_double_3D(dset_id, type, buf, hdferr)
     end if
 
 end subroutine ModEM_HDF5_write_dataset_real_double_3D
+
+subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf, memspace_id, fspace_id, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    integer (kind=HID_T), intent(in) :: real_dset_id
+    integer (kind=HID_T), intent(in) :: imag_dset_id
+    complex (kind=prec), pointer, dimension(:,:,:), intent(in) :: buf
+    integer (kind=HID_T), intent(in) :: memspace_id
+    integer (kind=HID_T), intent(in) :: fspace_id
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HSIZE_T) :: start(4), count(4), block(1), stride(1)
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    raise_error = present(hdferr)
+
+    start = [0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
+    stride(1) = 2
+    count = [1_HSIZE_T, size(buf, 1, kind=HSIZE_T), size(buf, 2, kind=HSIZE_T), size(buf, 3, kind=HSIZE_T)]
+    block(1) = 1
+    buf_ptr = c_loc(buf(1, 1, 1))
+    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl, stride, block)
+    call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
+
+    start = [1_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
+    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl, stride, block)
+    call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
+
+end subroutine ModEM_HDF5_write_dataset_complex_real
 
 subroutine ModEM_HDF5_read_dataset_cptr(dset_id, type, buf, hdferr)
 

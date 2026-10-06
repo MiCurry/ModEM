@@ -76,7 +76,7 @@ program Mod3DMT
     call EsMgr_init(grid, context=modem_ctx, &
                           save_in_file=cUserDef % storeSolnsInFile, &
                           prefix=cUserDef % prefix, &
-                          ftype=FTYPE_BINARY)
+                          ftype=FTYPE_HDF5)
 
     ! Check if a large grid file with E field is defined:
     ! NOTE: right now both grids share the same transmitters.

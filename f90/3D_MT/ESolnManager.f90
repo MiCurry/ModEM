@@ -53,6 +53,7 @@ module ESolnManager
 
     character(len=*), parameter :: FTYPE_ASCII = "ascii"
     character(len=*), parameter :: FTYPE_BINARY = "binary"
+    character(len=*), parameter :: FTYPE_HDF5 = "hdf5"
 
     character(len=*), parameter :: E_FIELD_TYPE_FWD = "FWD"
     character(len=*), parameter :: E_FIELD_TYPE_JMULTT = "JmultT"
@@ -66,7 +67,7 @@ module ESolnManager
     integer :: esmgr_holder_bytes = 0 
     logical :: esmgr_holder_allocated = .false.
 
-    public :: FTYPE_ASCII, FTYPE_BINARY
+    public :: FTYPE_ASCII, FTYPE_BINARY, FTYPE_HDF5
     public :: E_FIELD_TYPE_FWD, E_FIELD_TYPE_JMULTT
     public :: EsMgr_init
     public :: EsMgr_create_solnVectorMTX, EsMgr_create_e
@@ -140,7 +141,7 @@ contains
         end if
 
         select case (ftype_lcl)
-            case (FTYPE_ASCII, FTYPE_BINARY)
+            case (FTYPE_ASCII, FTYPE_BINARY, FTYPE_HDF5)
             case DEFAULT
                 write(0,*) "ERROR: ", trim(ftype_lcl), " is not a valid file type for Esoln"
                 write(0,*) "ERROR: Valid options are: [", trim(FTYPE_ASCII), " | ", trim(FTYPE_BINARY), "]"

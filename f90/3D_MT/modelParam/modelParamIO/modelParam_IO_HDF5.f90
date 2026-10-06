@@ -3,6 +3,7 @@ submodule (ModelSpace:ModelSpaceIO) modelParam_IO_HDF5
 #ifdef HDF5
 
 use griddef
+use hdf5
 use ModEM_HDF5
 
 implicit none
