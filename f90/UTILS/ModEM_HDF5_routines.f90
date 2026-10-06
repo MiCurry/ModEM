@@ -768,8 +768,7 @@ subroutine ModEM_HDF5_create_complex_dataset(loc_id, real_dataset_name, imag_dat
     hdferr_lcl = 0
 
     write(0,*) "Creating real part of complex dataset: ", trim(real_dataset_name)
-    call ModEM_HDF5_create_dataset(loc_id, trim(real_dataset_name), H5T_NATIVE_DOUBLE, dspace_id, real_dset_id)
-    write(0,*) 'Hdferr_lcl:', hdferr_lcl
+    call ModEM_HDF5_create_dataset(loc_id, real_dataset_name, H5T_NATIVE_DOUBLE, dspace_id, real_dset_id)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -1095,15 +1094,22 @@ subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf
     raise_error = present(hdferr)
 
     start = [0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
-    stride(1) = 2
     count = [1_HSIZE_T, size(buf, 1, kind=HSIZE_T), size(buf, 2, kind=HSIZE_T), size(buf, 3, kind=HSIZE_T)]
-    block(1) = 1
     buf_ptr = c_loc(buf(1, 1, 1))
-    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl, stride, block)
+
+    write(0,*) "Start: ", start
+    write(0,*) "Count: ", count
+
+
+    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
     call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
 
+    write(0,*) "DONE WRITING THE FIRST"
     start = [1_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
-    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl, stride, block)
+
+    write(0,*) "Start: ", start
+    write(0,*) "Count: ", count
+    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
     call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
 
 end subroutine ModEM_HDF5_write_dataset_complex_real
