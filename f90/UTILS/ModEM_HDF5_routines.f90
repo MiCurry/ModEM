@@ -58,6 +58,7 @@ module ModEM_HDF5
     end interface
 
     character (len=*), parameter :: DIMENSION_SCALE_CLASS = 'DIMENSION_SCALE'
+    character (len=*), parameter :: NETCDF_PURE_DIMENSION_ATTR_VALUE = 'This is a netCDF dimension but not a netCDF variable.'
 
     integer :: FILE_CREATE_TRUNC_MODE
     integer :: FILE_READ_ONLY_MODE 
@@ -490,6 +491,74 @@ subroutine ModEM_HDF5_make_dataset_dimension(dset_id, hdferr)
     call h5tclose_f(type_id, hdferr_lcl)
 
 end subroutine ModEM_HDF5_make_dataset_dimension
+
+subroutine ModEM_HDF5_make_dataset_pure_dimension(dset_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    integer (kind=HID_T) :: type_id, attr_dspace_id, lass_attr_id, name_dspace_id
+    integer (kind=HID_T) :: name_attr_id
+    integer (kind=size_t) :: str_len
+
+    integer(hsize_t), dimension(1) :: dim = (/ 1 /)
+
+    raise_error = present(hdferr)
+
+    call ModEM_HDF5_make_dataset_dimension(dset_id)
+
+    call h5tcopy_f(H5T_NATIVE_CHARACTER, type_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when copying type in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    str_len = len(trim(NETCDF_PURE_DIMENSION_ATTR_VALUE))
+    call h5tset_size_f(type_id, str_len, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when setting type size in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5screate_f(H5S_SCALAR_F, attr_dspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating scalar dataspace in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5screate_f(H5S_SCALAR_F, name_dspace_id, hdferr_lcl)
+    call h5acreate_f(dset_id, "NAME", type_id, name_dspace_id, name_attr_id, hdferr_lcl)
+
+    call h5awrite_f(name_attr_id, type_id, trim(NETCDF_PURE_DIMENSION_ATTR_VALUE), dim, hdferr_lcl)
+
+    call h5aclose_f(name_attr_id, hdferr_lcl)
+    call h5sclose_f(name_dspace_id, hdferr_lcl)
+    call h5tclose_f(type_id, hdferr_lcl)
+
+end subroutine ModEM_HDF5_make_dataset_pure_dimension
 
 subroutine ModEM_HDF5_attach_dim(loc_id, dim_name, dset_id, dim, hdferr)
     
@@ -1102,13 +1171,7 @@ subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf
 
 
     call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
-    call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, &
-                    file_space_id=fspace_id, mem_space_id=memspace_id)
-    if (hdferr_lcl /= 0) then
-        write(0,*) "ERROR: real-part write failed in ModEM_HDF5_write_dataset_complex_real"
-        call h5eprint_f(h5e_default_f, hdferr_lcl)
-        call ModEM_abort()
-    end if
+    call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
 
     write(0,*) "DONE WRITING THE FIRST"
     start = [1_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
@@ -1116,13 +1179,7 @@ subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf
     write(0,*) "Start: ", start
     write(0,*) "Count: ", count
     call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
-    call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, &
-                    file_space_id=fspace_id, mem_space_id=memspace_id)
-    if (hdferr_lcl /= 0) then
-        write(0,*) "ERROR: imag-part write failed in ModEM_HDF5_write_dataset_complex_real"
-        call h5eprint_f(h5e_default_f, hdferr_lcl)
-        call ModEM_abort()
-    end if
+    call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
 
 end subroutine ModEM_HDF5_write_dataset_complex_real
 
