@@ -556,32 +556,26 @@ contains
          call ModEM_HDF5_create_dataspace(rank(vector % grid % yCenter), (/shape(vector % grid % yCenter, kind=HSIZE_T)/), ydim_dspace_id)
          call ModEM_HDF5_create_dataspace(rank(vector % grid % zCenter), (/shape(vector % grid % zCenter, kind=HSIZE_T)/), zdim_dspace_id)
 
-         write(0,*) "write - 2"
-
-         call MODEM_HDF5_create_dataset(root_group_id, 'x', H5T_NATIVE_DOUBLE, xdim_dspace_id, xdim_dset_id)
-         write(0,*) "write - 2.1"
-         call MODEM_HDF5_create_dataset(root_group_id, 'y', H5T_NATIVE_DOUBLE, ydim_dspace_id, ydim_dset_id)
-         write(0,*) "write - 2.2"
-         call MODEM_HDF5_create_dataset(root_group_id, 'z', H5T_NATIVE_DOUBLE, zdim_dspace_id, zdim_dset_id) 
-
-         write(0,*) "write - 3"
+         call ModEM_HDF5_create_dataset(root_group_id, 'x', H5T_NATIVE_DOUBLE, xdim_dspace_id, xdim_dset_id)
+         call ModEM_HDF5_create_dataset(root_group_id, 'y', H5T_NATIVE_DOUBLE, ydim_dspace_id, ydim_dset_id)
+         call ModEM_HDF5_create_dataset(root_group_id, 'z', H5T_NATIVE_DOUBLE, zdim_dspace_id, zdim_dset_id) 
 
          ! Write dimensions to file
          call ModEM_HDF5_write_dataset(xdim_dset_id, H5T_NATIVE_DOUBLE, vector % grid % xCenter)
          call ModEM_HDF5_write_dataset(ydim_dset_id, H5T_NATIVE_DOUBLE, vector % grid % yCenter)
          call ModEM_HDF5_write_dataset(zdim_dset_id, H5T_NATIVE_DOUBLE, vector % grid % zCenter)
 
-         write(0,*) "write - 4"
+         call ModEM_HDF5_make_dataset_dimension(xdim_dset_id)
+         call ModEM_HDF5_make_dataset_dimension(ydim_dset_id)
+         call ModEM_HDF5_make_dataset_dimension(zdim_dset_id)
+
          call ModEM_HDF5_close_dataset(xdim_dset_id)
          call ModEM_HDF5_close_dataset(ydim_dset_id)
          call ModEM_HDF5_close_dataset(zdim_dset_id)
-         write(0,*) "write - 5"
 
          call ModEM_HDF5_close_dataspace(xdim_dspace_id)
          call ModEM_HDF5_close_dataspace(ydim_dspace_id)
          call ModEM_HDF5_close_dataspace(zdim_dspace_id)
-
-         write(0,*) "write - 6"
 
          ! Creat the dataspace that will resprent what the arrays will look like in the will look like
          call ModEM_HDF5_create_dataspace(rank(vector % x), (/shape(vector % x, kind=HSIZE_T)/), x_dspace_id)
@@ -589,26 +583,19 @@ contains
          call ModEM_HDF5_create_dataspace(rank(vector % z), (/shape(vector % z, kind=HSIZE_T)/), z_dspace_id)
 
          ! Create the memory space for what the arrays actually look like
-         write(0,*) "write - 7"
-
-         !dims_mem = (/2_HSIZE_T, size(vector % x, 1, kind=HSIZE_T), size(vector % x, 2, kind=/)
          dims_mem = [2_HSIZE_T, size(vector%x, 1, kind=HSIZE_T), size(vector % x, 2, kind=HSIZE_T), size(vector%x, 3, kind=HSIZE_T)]
          call ModEM_HDF5_create_dataspace(size(dims_mem), dims_mem, mem_space_id)
 
-         write(0,*) 'Dims_mem: ', dims_mem
-         write(0,*) 'x shape: ', shape(vector % x)
-
-         ! Create the datasets
          call ModEM_HDF5_create_complex_dataset(root_group_id, "x_real", "x_imag", x_dspace_id, xreal_dset_id, ximag_dset_id)
          !call ModEM_HDF5_create_complex_dataset(root_group_id, "y_real", "y_imag", y_dspace_id, yreal_dset_id, yimag_dset_id)
          !call ModEM_HDF5_create_complex_dataset(root_group_id, "z_real", "z_imag", z_dspace_id, zreal_dset_id, zimag_dset_id)
 
-         write(0,*) "write - 9"
          call MOdEM_HDF5_write_dataset(xreal_dset_id, ximag_dset_id, vector % x, mem_space_id, x_dspace_id)
          !call MOdEM_HDF5_write_dataset(yreal_dset_id, yimag_dset_id, vector % y, mem_space_id, y_dspace_id)
          !call MOdEM_HDF5_write_dataset(zreal_dset_id, zimag_dset_id, vector % z, mem_space_id, z_dspace_id )
 
-         write(0,*) "write - 10"
+         ! Attach dimensions 
+
 
          call ModEM_HDF5_close_dataset(xreal_dset_id)
          call ModEM_HDF5_close_dataset(ximag_dset_id)
@@ -616,14 +603,10 @@ contains
        !  call ModEM_HDF5_close_dataset(yimag_dset_id)
        !  call ModEM_HDF5_close_dataset(zreal_dset_id)
        !  call ModEM_HDF5_close_dataset(zimag_dset_id)
-         write(0,*) "write - 11"
-         
 
          call ModEM_HDF5_close_dataspace(x_dspace_id)
        !  call ModEM_HDF5_close_dataspace(y_dspace_id)
        !  call ModEM_HDF5_close_dataspace(z_dspace_id)
-
-         write(0,*) "write - 12"
 
          call ModEM_HDF5_close_group(root_group_id)
          call ModEM_HDF5_close_file(file_id)
