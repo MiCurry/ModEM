@@ -706,8 +706,6 @@ subroutine ModEM_HDF5_attach_dim_by_id(dim_id, dset_id, dim, hdferr)
 
     raise_error = present(hdferr)
 
-    write(0,*) "I am here in attach_dim_by_id"
-
     call h5dsattach_scale_f(dset_id, dim_id, dim, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
@@ -1276,18 +1274,11 @@ subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf
     count = [1_HSIZE_T, size(buf, 1, kind=HSIZE_T), size(buf, 2, kind=HSIZE_T), size(buf, 3, kind=HSIZE_T)]
     buf_ptr = c_loc(buf(1, 1, 1))
 
-    write(0,*) "Start: ", start
-    write(0,*) "Count: ", count
-
-
     call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
     call h5dwrite_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
 
-    write(0,*) "DONE WRITING THE FIRST"
     start = [1_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
 
-    write(0,*) "Start: ", start
-    write(0,*) "Count: ", count
     call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
     call h5dwrite_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
 
