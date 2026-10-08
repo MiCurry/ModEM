@@ -45,6 +45,11 @@ module ModEM_HDF5
         module procedure ModEM_HDF5_read_attr_real_double_2D
     end interface
 
+    interface ModEM_HDF5_attach_dim
+        module procedure ModEM_HDF5_attach_dim_by_name
+        module procedure ModEM_HDF5_attach_dim_by_id
+    end interface
+
     abstract interface
        integer function ModEM_h5_itr_cb_interf(loc_id, name, info, parent_id) bind(c)
            use iso_c_binding
@@ -157,6 +162,8 @@ subroutine ModEM_HDF5_create_file(fname, mode, file_id, hdferr)
     integer :: hdferr_lcl
 
     raise_error = present(hdferr)
+
+    write(0,*) 'hdferff_lcl - start', hdferr_lcl
 
     ! call create
     call h5fcreate_f(fname, mode, file_id, hdferr_lcl)
@@ -601,7 +608,7 @@ subroutine ModEM_HDF5_make_dataset_pure_dimension(dset_id, hdferr)
 
 end subroutine ModEM_HDF5_make_dataset_pure_dimension
 
-subroutine ModEM_HDF5_attach_dim(loc_id, dim_name, dset_id, dim, hdferr)
+subroutine ModEM_HDF5_attach_dim_by_name(loc_id, dim_name, dset_id, dim, hdferr)
     
     integer (kind=HID_T), intent(in) :: loc_id
     character(len=*), intent(in) :: dim_name
@@ -641,17 +648,46 @@ subroutine ModEM_HDF5_attach_dim(loc_id, dim_name, dset_id, dim, hdferr)
 
     call h5dclose_f(dim_dset_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
+        write(0,*) 'ERROR WAS NOT CLOSED!'
         if (raise_error) then
             hdferr = hdferr_lcl
             return
         else 
-            write(0,*) "ERROR: HDF5 Error when closing dimension dataset in ModEM_HDF5_attach_dim"
+            write(0,*) "ERROR: HDF5 Error when closing dimension dataset in ModEM_HDF5_attach_dim_by_name"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
     end if
 
-end subroutine ModEM_HDF5_attach_dim
+end subroutine ModEM_HDF5_attach_dim_by_name
+
+subroutine ModEM_HDF5_attach_dim_by_id(dim_id, dset_id, dim, hdferr)
+    
+    integer (kind=HID_T), intent(in) :: dim_id 
+    integer (kind=HID_T), intent(in) :: dset_id
+    integer, intent(in) :: dim
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    write(0,*) "I am here in attach_dim_by_id"
+
+    call h5dsattach_scale_f(dset_id, dim_id, dim, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when attaching dimension in ModEM_HDF5_attach_dim_by_id"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_attach_dim_by_id
 
 subroutine ModEM_HDF5_get_dataset_type(dset_id, type_id, hdferr)
 
