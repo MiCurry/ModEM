@@ -128,6 +128,8 @@ subroutine ModEM_HDF5_open(fname, file_id, mode, hdferr)
     logical :: raise_error
     integer :: hdferr_lcl
 
+    raise_error = present(hdferr)
+
     call h5fopen_f(fname, mode, file_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
@@ -486,6 +488,7 @@ subroutine ModEM_HDF5_make_dataset_dimension(dset_id, hdferr)
     call h5acreate_f(dset_id, "CLASS", type_id, class_dspace_id, class_attr_id, hdferr_lcl)
     call h5awrite_f(class_attr_id, type_id, DIMENSION_SCALE_CLASS, dim, hdferr_lcl)
 
+    call h5sclose_f(attr_dspace_id, hdferr_lcl)
     call h5aclose_f(class_attr_id, hdferr_lcl)
     call h5sclose_f(class_dspace_id, hdferr_lcl)
     call h5tclose_f(type_id, hdferr_lcl)
@@ -502,28 +505,30 @@ subroutine ModEM_HDF5_make_dataset_pure_dimension(dset_id, hdferr)
     logical :: raise_error
     integer :: hdferr_lcl
 
-    integer (kind=HID_T) :: type_id, attr_dspace_id, lass_attr_id, name_dspace_id
-    integer (kind=HID_T) :: name_attr_id
+    integer (kind=HID_T) :: type_id, name_dspace_id, name_attr_id
     integer (kind=size_t) :: str_len
 
     integer(hsize_t), dimension(1) :: dim = (/ 1 /)
 
     raise_error = present(hdferr)
 
+    ! Assuming this correctly adds CLASS="DIMENSION_SCALE"
     call ModEM_HDF5_make_dataset_dimension(dset_id)
 
-    call h5tcopy_f(H5T_NATIVE_CHARACTER, type_id, hdferr_lcl)
+    ! Use H5T_C_S1 instead of NATIVE_CHARACTER for strict NetCDF string compatibility
+    call h5tcopy_f(H5T_C_S1, type_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
             return
         else 
-            write(0,*) "ERROR: HDF5 Error when copying type in ModEM_HDF5_make_dataset_dimension"
+            write(0,*) "ERROR: HDF5 Error when copying type in ModEM_HDF5_make_dataset_pure_dimension"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
     end if
 
+    ! Set the size to EXACTLY the length of the magic string (53 characters)
     str_len = len(trim(NETCDF_PURE_DIMENSION_ATTR_VALUE))
     call h5tset_size_f(type_id, str_len, hdferr_lcl)
     if (hdferr_lcl /= 0) then
@@ -531,29 +536,65 @@ subroutine ModEM_HDF5_make_dataset_pure_dimension(dset_id, hdferr)
             hdferr = hdferr_lcl
             return
         else 
-            write(0,*) "ERROR: HDF5 Error when setting type size in ModEM_HDF5_make_dataset_dimension"
+            write(0,*) "ERROR: HDF5 Error when setting type size in ModEM_HDF5_make_dataset_pure_dimension"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
     end if
 
-    call h5screate_f(H5S_SCALAR_F, attr_dspace_id, hdferr_lcl)
+    ! Explicitly tell HDF5/NetCDF that the string pad is NULLTERM
+    call h5tset_strpad_f(type_id, H5T_STR_NULLTERM_F, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
             return
         else 
-            write(0,*) "ERROR: HDF5 Error when creating scalar dataspace in ModEM_HDF5_make_dataset_dimension"
+            write(0,*) "ERROR: HDF5 Error when setting strpad in ModEM_HDF5_make_dataset_pure_dimension"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
     end if
 
+    ! Create SCALAR dataspace (Crucial for NetCDF3/Classic)
     call h5screate_f(H5S_SCALAR_F, name_dspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating scalar dataspace in ModEM_HDF5_make_dataset_pure_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    ! Create the "NAME" attribute
     call h5acreate_f(dset_id, "NAME", type_id, name_dspace_id, name_attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating attribute in ModEM_HDF5_make_dataset_pure_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
 
+    ! Write the raw string (do NOT append c_null_char manually)
     call h5awrite_f(name_attr_id, type_id, trim(NETCDF_PURE_DIMENSION_ATTR_VALUE), dim, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when writing attribute in ModEM_HDF5_make_dataset_pure_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
 
+    ! Cleanup
     call h5aclose_f(name_attr_id, hdferr_lcl)
     call h5sclose_f(name_dspace_id, hdferr_lcl)
     call h5tclose_f(type_id, hdferr_lcl)

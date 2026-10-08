@@ -514,7 +514,6 @@ contains
 
          integer (kind=HID_T) :: nx_dset_id, ny_dset_id, nz_dset_id
          integer (kind=HID_T) :: nxp1_dset_id, nyp1_dset_id, nzp1_dset_id
-         integer (kind=HID_T) :: xdim_dspace_id, ydim_dspace_id, zdim_dspace_id
 
          integer (kind=HID_T) :: x_dspace_id, y_dspace_id, z_dspace_id
          integer (kind=HID_T) :: nx_dspace_id, ny_dspace_id, nz_dspace_id
@@ -522,7 +521,7 @@ contains
          integer (kind=HID_T) :: xreal_dset_id, yreal_dset_id, zreal_dset_id
          integer (kind=HID_T) :: ximag_dset_id, yimag_dset_id, zimag_dset_id
 
-         integer (kind=HID_T) :: mem_space_id
+         integer (kind=HID_T) :: x_mem_space_id, y_mem_space_id, z_mem_space_id
          integer (kind=HID_T) :: root_group_id
 
          character(len=512) :: fname
@@ -558,15 +557,12 @@ contains
          call ModEM_HDF5_create_dataset(root_group_id, 'nz',   H5T_NATIVE_INTEGER, nz_dspace_id, nz_dset_id) 
          call ModEM_HDF5_create_dataset(root_group_id, 'nzp1', H5T_NATIVE_INTEGER, nzp1_dspace_id, nzp1_dset_id) 
 
-         call ModEM_HDF5_make_dataset_dimension(nx_dset_id)
-         call ModEM_HDF5_add_attr(nx_dset_id, "NAME", "This is a netCDF dimension but not a netCDF variable.")
-
-        ! call ModEM_HDF5_make_dataset_pure_dimension(nx_dset_id)
-        ! call ModEM_HDF5_make_dataset_pure_dimension(nxp1_dset_id)
-        ! call ModEM_HDF5_make_dataset_pure_dimension(ny_dset_id)
-        ! call ModEM_HDF5_make_dataset_pure_dimension(nyp1_dset_id)
-        ! call ModEM_HDF5_make_dataset_pure_dimension(nz_dset_id)
-        ! call ModEM_HDF5_make_dataset_pure_dimension(nzp1_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(nx_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(nxp1_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(ny_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(nyp1_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(nz_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(nzp1_dset_id)
 
          call ModEM_HDF5_close_dataset(nx_dset_id)
          call ModEM_HDF5_close_dataset(nxp1_dset_id)
@@ -589,36 +585,67 @@ contains
 
          ! Create the memory space for what the arrays actually look like
          dims_mem = [2_HSIZE_T, size(vector%x, 1, kind=HSIZE_T), size(vector % x, 2, kind=HSIZE_T), size(vector%x, 3, kind=HSIZE_T)]
-         call ModEM_HDF5_create_dataspace(size(dims_mem), dims_mem, mem_space_id)
+         call ModEM_HDF5_create_dataspace(size(dims_mem), dims_mem, x_mem_space_id)
 
          call ModEM_HDF5_create_complex_dataset(root_group_id, "x_real", "x_imag", x_dspace_id, xreal_dset_id, ximag_dset_id)
-         !call ModEM_HDF5_create_complex_dataset(root_group_id, "y_real", "y_imag", y_dspace_id, yreal_dset_id, yimag_dset_id)
-         !call ModEM_HDF5_create_complex_dataset(root_group_id, "z_real", "z_imag", z_dspace_id, zreal_dset_id, zimag_dset_id)
+         call MOdEM_HDF5_write_dataset(xreal_dset_id, ximag_dset_id, vector % x, x_mem_space_id, x_dspace_id)
 
-         call MOdEM_HDF5_write_dataset(xreal_dset_id, ximag_dset_id, vector % x, mem_space_id, x_dspace_id)
-         !call MOdEM_HDF5_write_dataset(yreal_dset_id, yimag_dset_id, vector % y, mem_space_id, y_dspace_id)
-         !call MOdEM_HDF5_write_dataset(zreal_dset_id, zimag_dset_id, vector % z, mem_space_id, z_dspace_id )
-
-         ! Attach dimensions 
-         !call ModEM_HDF5_attach_dim(root_group_id, 'z', xreal_dset_id, 1)
-         !call ModEM_HDF5_attach_dim(root_group_id, 'y', xreal_dset_id, 2)
-         !call ModEM_HDF5_attach_dim(root_group_id, 'x', xreal_dset_id, 3)
-
-         !call ModEM_HDF5_attach_dim(root_group_id, 'x', ximag_dset_id, 3)
-         !call ModEM_HDF5_attach_dim(root_group_id, 'y', ximag_dset_id, 2)
-         !call ModEM_HDF5_attach_dim(root_group_id, 'z', ximag_dset_id, 1)
-
+         ! Attach dimensions to x_real
+         call ModEM_HDF5_attach_dim(root_group_id, "nx", xreal_dset_id, 3)
+         call ModEM_HDF5_attach_dim(root_group_id, "nyp1", xreal_dset_id, 2)
+         call ModEM_HDF5_attach_dim(root_group_id, "nzp1", xreal_dset_id, 1)
+         
+         ! Attach dimensions to x_imag
+         call ModEM_HDF5_attach_dim(root_group_id, "nx", ximag_dset_id, 3)
+         call ModEM_HDF5_attach_dim(root_group_id, "nyp1", ximag_dset_id, 2)
+         call ModEM_HDF5_attach_dim(root_group_id, "nzp1", ximag_dset_id, 1)
 
          call ModEM_HDF5_close_dataset(xreal_dset_id)
          call ModEM_HDF5_close_dataset(ximag_dset_id)
-       !  call ModEM_HDF5_close_dataset(yreal_dset_id)
-       !  call ModEM_HDF5_close_dataset(yimag_dset_id)
-       !  call ModEM_HDF5_close_dataset(zreal_dset_id)
-       !  call ModEM_HDF5_close_dataset(zimag_dset_id)
-
          call ModEM_HDF5_close_dataspace(x_dspace_id)
-       !  call ModEM_HDF5_close_dataspace(y_dspace_id)
-       !  call ModEM_HDF5_close_dataspace(z_dspace_id)
+         call ModEM_HDF5_close_dataspace(x_mem_space_id)
+
+         dims_mem = [2_HSIZE_T, size(vector % y, 1, kind=HSIZE_T), size(vector % y, 2, kind=HSIZE_T), size(vector % y, 3, kind=HSIZE_T)]
+         call ModEM_HDF5_create_dataspace(size(dims_mem), dims_mem, y_mem_space_id)
+
+         call ModEM_HDF5_create_complex_dataset(root_group_id, "y_real", "y_imag", y_dspace_id, yreal_dset_id, yimag_dset_id)
+         call MOdEM_HDF5_write_dataset(yreal_dset_id, yimag_dset_id, vector % y, y_mem_space_id, y_dspace_id)
+
+         ! Attach Dimensions to y_real
+         call ModEM_HDF5_attach_dim(root_group_id, "nxp1", yreal_dset_id, 3)
+         call ModEM_HDF5_attach_dim(root_group_id, "ny", yreal_dset_id, 2)
+         call ModEM_HDF5_attach_dim(root_group_id, "nzp1", yreal_dset_id, 1)
+
+         ! Attach Dimensions to y_imag
+         call ModEM_HDF5_attach_dim(root_group_id, "nxp1", yimag_dset_id, 3)
+         call ModEM_HDF5_attach_dim(root_group_id, "ny", yimag_dset_id, 2)
+         call ModEM_HDF5_attach_dim(root_group_id, "nzp1", yimag_dset_id, 1)
+
+         call ModEM_HDF5_close_dataset(yreal_dset_id)
+         call ModEM_HDF5_close_dataset(yimag_dset_id)
+         call ModEM_HDF5_close_dataspace(y_mem_space_id)
+         call ModEM_HDF5_close_dataspace(y_dspace_id)
+
+         dims_mem = [2_HSIZE_T, size(vector % z, 1, kind=HSIZE_T), size(vector % z, 2, kind=HSIZE_T), size(vector % z, 3, kind=HSIZE_T)]
+         call ModEM_HDF5_create_dataspace(size(dims_mem), dims_mem, z_mem_space_id)
+
+         call ModEM_HDF5_create_complex_dataset(root_group_id, "z_real", "z_imag", z_dspace_id, zreal_dset_id, zimag_dset_id)
+         call MOdEM_HDF5_write_dataset(zreal_dset_id, zimag_dset_id, vector % z, z_mem_space_id, z_dspace_id)
+
+         ! Attach Dimensions to z_real
+         call ModEM_HDF5_attach_dim(root_group_id, "nxp1", zreal_dset_id, 1)
+         call ModEM_HDF5_attach_dim(root_group_id, "nyp1", zreal_dset_id, 2)
+         call ModEM_HDF5_attach_dim(root_group_id, "nz", zreal_dset_id, 3)
+
+         ! Attach Dimensions to z_imag
+         call ModEM_HDF5_attach_dim(root_group_id, "nxp1", zimag_dset_id, 1)
+         call ModEM_HDF5_attach_dim(root_group_id, "nyp1", zimag_dset_id, 2)
+         call ModEM_HDF5_attach_dim(root_group_id, "nz", zimag_dset_id, 3)
+
+         call ModEM_HDF5_close_dataset(zreal_dset_id)
+         call ModEM_HDF5_close_dataset(zimag_dset_id)
+         call ModEM_HDF5_close_dataspace(z_mem_space_id)
+         call ModEM_HDF5_close_dataspace(z_dspace_id)
 
          call ModEM_HDF5_close_group(root_group_id)
          call ModEM_HDF5_close_file(file_id)
