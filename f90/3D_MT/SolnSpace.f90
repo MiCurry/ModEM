@@ -527,6 +527,7 @@ contains
          integer (kind=HID_T) :: root_group_id
 
          character(len=512) :: fname
+         character (len=512) :: hdf5_version_str
          
          if (present(pol_index)) then
              pol_index_lcl = pol_index
@@ -539,6 +540,11 @@ contains
 
          call ModEM_HDF5_create_file(fname, H5F_ACC_TRUNC_F, file_id)
          call ModEM_HDF5_open_group(file_id, "/", root_group_id)
+
+         call ModEM_HDF5_get_version(hdf5_version_str)
+         call ModEM_HDF5_add_attr(file_id, '_NCProperties', "version=2,hdf5="// trim(hdf5_version_str))
+         call ModEM_HDF5_add_attr(file_id, '_HDF5_version', trim(hdf5_version_str))
+         call ModEM_HDF5_add_attr(file_id, '_nc3_strict', 1)
 
          ! Write the dimensions nx, ny, nz
          ! But we also need dimesnions for nx+1, ny+1 and nz+1
