@@ -163,8 +163,6 @@ subroutine ModEM_HDF5_create_file(fname, mode, file_id, hdferr)
 
     raise_error = present(hdferr)
 
-    write(0,*) 'hdferff_lcl - start', hdferr_lcl
-
     ! call create
     call h5fcreate_f(fname, mode, file_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
@@ -447,14 +445,17 @@ subroutine ModEM_HDF5_make_dataset_dimension(dset_id, hdferr)
     logical :: raise_error
     integer :: hdferr_lcl
 
-    integer (kind=HID_T) :: type_id, attr_dspace_id, class_attr_id, class_dspace_id
+    integer (kind=HID_T) :: type_id, class_attr_id, class_dspace_id
     integer (kind=size_t) :: str_len
 
     integer(hsize_t), dimension(1) :: dim = (/ 1 /)
 
     raise_error = present(hdferr)
 
-    call h5tcopy_f(H5T_NATIVE_CHARACTER, type_id, hdferr_lcl)
+    ! CLASS must be a null-terminated C string. A space-padded Fortran string
+    ! makes h5dsattach_scale_f leak an attribute handle, which keeps the file
+    ! open after h5fclose_f.
+    call h5tcopy_f(H5T_C_S1, type_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
@@ -466,36 +467,68 @@ subroutine ModEM_HDF5_make_dataset_dimension(dset_id, hdferr)
         end if
     end if
 
-    str_len = 15
+    ! Length of the string plus one for the null terminator
+    str_len = len(DIMENSION_SCALE_CLASS) + 1
     call h5tset_size_f(type_id, str_len, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
             return
-        else 
+        else
             write(0,*) "ERROR: HDF5 Error when setting type size in ModEM_HDF5_make_dataset_dimension"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
     end if
 
-    call h5screate_f(H5S_SCALAR_F, attr_dspace_id, hdferr_lcl)
+    call h5tset_strpad_f(type_id, H5T_STR_NULLTERM_F, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
             hdferr = hdferr_lcl
             return
-        else 
-            write(0,*) "ERROR: HDF5 Error when creating scalar dataspace in ModEM_HDF5_make_dataset_dimension"
+        else
+            write(0,*) "ERROR: HDF5 Error when setting strpad in ModEM_HDF5_make_dataset_dimension"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
     end if
 
     call h5screate_f(H5S_SCALAR_F, class_dspace_id, hdferr_lcl)
-    call h5acreate_f(dset_id, "CLASS", type_id, class_dspace_id, class_attr_id, hdferr_lcl)
-    call h5awrite_f(class_attr_id, type_id, DIMENSION_SCALE_CLASS, dim, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when creating scalar dataspace in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
 
-    call h5sclose_f(attr_dspace_id, hdferr_lcl)
+    call h5acreate_f(dset_id, "CLASS", type_id, class_dspace_id, class_attr_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when creating CLASS attribute in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    call h5awrite_f(class_attr_id, type_id, DIMENSION_SCALE_CLASS, dim, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else
+            write(0,*) "ERROR: HDF5 Error when writing CLASS attribute in ModEM_HDF5_make_dataset_dimension"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
     call h5aclose_f(class_attr_id, hdferr_lcl)
     call h5sclose_f(class_dspace_id, hdferr_lcl)
     call h5tclose_f(type_id, hdferr_lcl)
@@ -535,8 +568,8 @@ subroutine ModEM_HDF5_make_dataset_pure_dimension(dset_id, hdferr)
         end if
     end if
 
-    ! Set the size to EXACTLY the length of the magic string (53 characters)
-    str_len = len(trim(NETCDF_PURE_DIMENSION_ATTR_VALUE))
+    ! Length of the magic string plus one for the null terminator
+    str_len = len_trim(NETCDF_PURE_DIMENSION_ATTR_VALUE) + 1
     call h5tset_size_f(type_id, str_len, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
