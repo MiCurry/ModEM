@@ -24,6 +24,7 @@ module ModEM_HDF5
         module procedure ModEM_HDF5_read_dataset_real_double_1D
         module procedure ModEM_HDF5_read_dataset_real_double_2D
         module procedure ModEM_HDF5_read_dataset_real_double_3D
+        module procedure ModEM_HDF5_read_dataset_complex_real
     end interface
 
     interface ModEM_HDF5_add_attr
@@ -178,6 +179,39 @@ subroutine ModEM_HDF5_create_file(fname, mode, file_id, hdferr)
 
 end subroutine ModEM_HDF5_create_file
 
+subroutine ModEM_HDF5_open_file(fname, mode, file_id, hdferr)
+
+    implicit none
+
+    character (len=*), intent(in) :: fname
+    integer, intent(in) :: mode
+    integer (kind=HID_T), intent(out) :: file_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+    write(0,*) "I am inside open!"
+
+    ! call create
+    call h5fopen_f(trim(fname), mode, file_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating file in ModEM_HDF5_create_file"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+    write(0,*) "done with open.."
+
+
+end subroutine ModEM_HDF5_open_file
+
 subroutine ModEM_HDF5_close_file(file_id, hdferr)
 
     implicit none
@@ -299,6 +333,7 @@ subroutine ModEM_HDF5_does_group_exist(file_id, group_name, exists, hdferr)
     integer :: hdferr_lcl
 
     raise_error = present(hdferr)
+    call h5lexists_f(file_id, group_name, exists, hdferr)
 
 end subroutine ModEM_HDF5_does_group_exist
 
@@ -775,6 +810,32 @@ subroutine ModEM_HDF5_create_dataspace(rank, dims, dspace_id, hdferr)
 
 end subroutine ModEM_HDF5_create_dataspace
 
+subroutine ModEM_HDF5_create_scalar_dataspace(dspace_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(out) :: dspace_id
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    call h5screate_f(H5S_SCALAR_F, dspace_id, hdferr_lcl)
+    if (hdferr_lcl /= 0) then
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when creating data space in ModEM_HDF5_create_dataspace"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end if
+
+end subroutine ModEM_HDF5_create_scalar_dataspace
+
 subroutine ModEM_HDF5_close_dataspace(dspace_id, hdferr)
 
     implicit none
@@ -800,6 +861,32 @@ subroutine ModEM_HDF5_close_dataspace(dspace_id, hdferr)
     end if
 
 end subroutine ModEM_HDF5_close_dataspace
+
+subroutine ModEM_HDF5_close_dataspaces(dspace_ids, hdferr)
+
+    integer (kind=HID_T), dimension(:), intent(in) :: dspace_ids
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    integer :: i
+
+    raise_error = present(hdferr)
+
+    do i = 1, size(dspace_ids)
+        call ModEM_HDF5_close_dataspace(dspace_ids(i), hdferr_lcl)
+        if (raise_error) then
+            hdferr = hdferr_lcl
+            return
+        else 
+            write(0,*) "ERROR: HDF5 Error when closing data space in ModEM_HDF5_close_dataspaces for the ", i, " dataspace"
+            call h5eprint_f(h5e_default_f, hdferr_lcl)
+            call ModEM_abort()
+        end if
+    end do
+
+end subroutine ModEM_HDF5_close_dataspaces
 
 subroutine ModEM_HDF5_create_string_type(type_id, str_len, hdferr)
 
@@ -951,7 +1038,6 @@ subroutine ModEM_HDF5_create_complex_dataset(loc_id, real_dataset_name, imag_dat
             hdferr = hdferr_lcl
             return
         else 
-            write(0,*) "ERROR: HDF5 Error when creating real part of complex data set in ModEM_HDF5_create_complex_dataset"
             call h5eprint_f(h5e_default_f, hdferr_lcl)
             call ModEM_abort()
         end if
@@ -1501,6 +1587,43 @@ subroutine ModEM_HDF5_read_dataset_real_double_3D(dset_id, type, buf, hdferr)
     end if
 
 end subroutine ModEM_HDF5_read_dataset_real_double_3D
+
+subroutine ModEM_HDF5_read_dataset_complex_real(real_dset_id, imag_dset_id, buf, memspace_id, fspace_id, hdferr)
+
+    use iso_c_binding, only : c_loc, c_ptr
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: real_dset_id
+    integer (kind=HID_T), intent(in) :: imag_dset_id
+    complex (kind=prec), pointer, dimension(:,:,:), intent(in) :: buf
+    integer (kind=HID_T), intent(in) :: memspace_id
+    integer (kind=HID_T), intent(in) :: fspace_id
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HSIZE_T) :: start(4), count(4), block(1), stride(1)
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    type (c_ptr) :: buf_ptr
+
+    start = [0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
+    count = [1_HSIZE_T, size(buf, 1, kind=HSIZE_T), size(buf, 2, kind=HSIZE_T), size(buf, 3, kind=HSIZE_T)]
+    buf_ptr = c_loc(buf(1, 1, 1))
+
+    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
+    call h5dread_f(real_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
+
+    start = [1_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T, 0_HSIZE_T]
+
+    call h5sselect_hyperslab_f(memspace_id, H5S_SELECT_SET_F, start, count, hdferr_lcl)
+    call h5dread_f(imag_dset_id, H5T_NATIVE_DOUBLE, buf_ptr, hdferr_lcl, memspace_id, fspace_id)
+
+end subroutine ModEM_HDF5_read_dataset_complex_real
+
+!subroutine ModEM_HDF5_write_dataset_complex_real(real_dset_id, imag_dset_id, buf, memspace_id, fspace_id, hdferr)
+
 
 subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
 

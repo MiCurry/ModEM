@@ -58,8 +58,6 @@ module ioAscii
   public                   :: EfileRead, EfileWrite, EfileWrite_hdf5
   public                   :: DfileWrite
   public                   :: ZfileRead, ZfileWrite
-  public                   ::  write_solnVectorMTX_hdf5
-  public                   :: read_solnVectorMTX
 
 
   integer(HID_T), private, save   :: file_id, group_id, attr_id, dset_id, dspace_id, atype_id, aspace_id, dtype_id ! file, data set, and dataspace handles
@@ -742,106 +740,6 @@ subroutine write_hdf5_attr(a_type, attr_name, attr_obj, path_id)
       end subroutine read_solnVectorMTX
 
 !******************************************************************
-      subroutine write_solnVectorMTX(eAll,cfile)
-
-      !  open cfile on unit fid, writes out object of
-      !   type cvector in standard format (readable by matlab
-      !   routine readcvector.m), closes file
-      !  NOT coded at present to specifically write out TE/TM
-      !    solutions, periods, etc. (can get this infor from
-      !    eAll%solns(j)%tx, but only with access to TXdict.
-
-      character(*), intent(in)          :: cfile
-      type(solnVectorMTX_t), intent(in)               :: eAll
-
-      !   local variables
-      integer           :: j,k,nMode = 2, ios,ig,cdot
-      character (len=3)         :: igchar
-      character (len=20) 		:: version = ''
-      character (len=200)       :: fn_output
-      real (kind=prec)   :: omega
-
-          fn_output = trim(cfile)
-
-           ! Test that the output grid is well-defined, at least on a basic level
-          if (.not. eAll%solns(1)%grid%allocated) then
-              write(0,*) 'WARNING: E-field grid is not allocated in write_solnVectorMTX'
-          else if ((eAll%solns(1)%grid%Nx <= 0) .or. (eAll%solns(1)%grid%Ny <= 0) .or. (eAll%solns(1)%grid%Nz <= 0)) then
-              write(0,*) 'Grid information: Nx=',eAll%solns(1)%grid%Nx,' Ny=',eAll%solns(1)%grid%Ny,' Nz=',eAll%solns(1)%grid%Nz
-              write(0,*) 'WARNING: E-field grid is not output properly in write_solnVectorMTX'
-          end if
-
-          write(*,*) 'E-fields written to ',trim(fn_output)
-
-          call FileWriteInit(version,fn_output,ioE,eAll%solns(1)%grid,eAll%nTX,nMode,ios)
-          do j = 1,eAll%nTx
-             do k = 1,eAll%solns(j)%nPol
-               omega = txDict(eAll%solns(j)%tx)%omega
-              
-               call EfileWrite(ioE, omega, j,  k, eAll%solns(j)%Pol_name(k), eAll%solns(j)%pol(k))
-
-             enddo
-          enddo
-          close(ioE)
-
-      end subroutine write_solnVectorMTX
-!******************************************************************
-      subroutine write_solnVectorMTX_hdf5(eAll,cfile)
-
-        !  open cfile on unit fid, writes out object of
-        !   type cvector in standard format (readable by matlab
-        !   routine readcvector.m), closes file
-        !  NOT coded at present to specifically write out TE/TM
-        !    solutions, periods, etc. (can get this infor from
-        !    eAll%solns(j)%tx, but only with access to TXdict.
-  
-        character(*), intent(in)                :: cfile
-        type(solnVectorMTX_t), intent(in)       :: eAll
-  
-        !   local variables
-        integer                         :: j,k,nMode = 2, ios,ig,cdot, hdferr
-        character (len=3)               :: igchar
-        character (len=20) 		          :: version = ''
-        character (len=200)             :: fn_output
-        real (kind=prec)                :: omega
-        character(len= 4)               :: freq
-        character(len = 4)              :: pol
-        character(len=2)                :: padded_j, padded_k
-        logical                         :: exists
-        
-          call open_ef_hdf5(cfile)
-          ! CALL h5gopen_f(file_id, 'E_field', group_id, hdferr) ! open the main group
-            
-          fn_output = trim(cfile)
-
-          ! Test that the output grid is well-defined, at least on a basic level
-         if (.not. eAll%solns(1)%grid%allocated) then
-             write(0,*) 'WARNING: E-field grid is not allocated in write_solnVectorMTX'
-         else if ((eAll%solns(1)%grid%Nx <= 0) .or. (eAll%solns(1)%grid%Ny <= 0) .or. (eAll%solns(1)%grid%Nz <= 0)) then
-             write(0,*) 'Grid information: Nx=',eAll%solns(1)%grid%Nx,' Ny=',eAll%solns(1)%grid%Ny,' Nz=',eAll%solns(1)%grid%Nz
-             write(0,*) 'WARNING: E-field grid is not output properly in write_solnVectorMTX'
-         end if
-
-         write(*,*) 'E-fields written to HDF5 ',trim(fn_output)
-            write(*,*) 'E-fields written to HDF5 ',trim(fn_output)
-  
-            
-            call FileWriteInit_hdf5(version,j,fn_output,eAll%solns(1)%grid,eAll%nTX,nMode) !displays grid dimensions in its own group under transmitter group
-            
-            do j = 1, eAll%nTx
-               do k = 1, eAll%solns(j)%nPol
-                write(0,*) j, k
-                 omega = txDict(eAll%solns(j)%tx)%omega
-                if (j== 1) then
-                 call EfileWrite_hdf5(omega, j, k,eAll%solns(j)%Pol_name(k), eAll%solns(j)%pol(k))
-                else 
-                  write(0,*) 'Not MT transmitter so no ModeNames available'
-                end if 
-               enddo
-            enddo
-            
-            call close_ef_hdf5(cfile)
-        end subroutine write_solnVectorMTX_hdf5
   
 
       !******************************************************************
