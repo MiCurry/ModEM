@@ -60,6 +60,7 @@ end interface
 
     !! e is array of electric field solution vectors for nPol source
     !! polarizations; 2 for 3D MT - one electrical field solution for each
+
     !! allows a variable number of polarizations to accommodate other uses
     !! e.g. active source applications
 	!! NM: to make it possibile to have both MT and CSEM in one eAll solution, the nPol must be general.
@@ -650,6 +651,8 @@ contains
          integer (kind=HID_T) :: nx_dspace_id, ny_dspace_id, nz_dspace_id
          integer (kind=HID_T) :: nxp1_dspace_id, nyp1_dspace_id, nzp1_dspace_id
 
+         integer (kind=HID_T) :: pol_str_dim_dspace_id, pol_str_dim_dset_id
+
          character (len=512) :: hdf5_version_str
 
          if (present(pol_index)) then
@@ -661,6 +664,13 @@ contains
          vector => e % pol(pol_index_lcl)
 
          ! Make a ONE dimension
+
+         ! Make a dimension the size of our polorization string length (2 at the moment)
+         call ModEM_HDF5_create_dataspace(1, (/int(2, kind=HSIZE_T)/), pol_str_dim_dspace_id)
+         call ModEM_HDF5_create_dataset(file_id, 'POL_NAME_STR_LEN', H5T_NATIVE_INTEGER, pol_str_dim_dspace_id, pol_str_dim_dset_id)
+         call ModEM_HDF5_make_dataset_pure_dimension(pol_str_dim_dset_id)
+         call ModEM_HDF5_close_dataspace(pol_str_dim_dspace_id)
+         call ModEM_HDF5_close_dataset(pol_str_dim_dset_id)
 
          ! Should we write the dimensions here?
          call ModEM_HDF5_create_dataspace(1, (/int(vector % nx, kind=HSIZE_T)/),   nx_dspace_id)
@@ -732,7 +742,7 @@ contains
          integer (kind=HID_T) :: tx_group_id
          integer (kind=HID_T) :: tx_dspace_id, tx_dset_id
          integer (kind=HID_T) :: pol_dspace_id, pol_dset_id
-
+         integer (kind=HID_T) :: pol_str_dspace_id, pol_str_dset_id
 
          character (len=512) :: esoln_group_name
          logical ::  file_exists
@@ -756,13 +766,18 @@ contains
          call ModEM_HDF5_close_dataset(tx_dset_id)
          call ModEM_HDF5_close_dataspace(tx_dspace_id)
 
-         ! Write the transmitter's period as a variable
+         ! Write the transmitter's period as a integer variable
          call ModEM_HDF5_create_scalar_dataspace(pol_dspace_id)
-         call ModEM_HDF5_create_dataset(tx_group_id, 'polarization', H5T_NATIVE_INTEGER, tx_dspace_id, tx_dset_id)
+         call ModEM_HDF5_create_dataset(tx_group_id, 'polarization', H5T_NATIVE_INTEGER, pol_dspace_id, pol_dset_id)
+         call ModEM_HDF5_write_dataset(pol_dset_id, H5T_NATIVE_INTEGER, pol_index)
+         call ModEM_HDF5_close_dataspace(pol_dspace_id)
+         call ModEM_HDF5_close_dataset(pol_dset_id)
 
-         write(0,*) 'Omega is: ', txDict(e % tx) % omega
+         ! Write the transmitter's polarization as a string variable
+         call ModEM_HDF5_add_string_variable(tx_group_id, 'polarization_str', trim(e % pol_name(pol_index_lcl)))
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'POL_NAME_STR_LEN', tx_group_id, 'polarization_str', 1)
 
-         ! Creat the dataspace that will resprent what the arrays will look like in the will look like
+         ! Creat tt he dataspace that will resprent what the arrays will look like in the will look like
          call ModEM_HDF5_create_dataspace(rank(vector % x), (/shape(vector % x, kind=HSIZE_T)/), x_dspace_id)
          call ModEM_HDF5_create_dataspace(rank(vector % y), (/shape(vector % y, kind=HSIZE_T)/), y_dspace_id)
          call ModEM_HDF5_create_dataspace(rank(vector % z), (/shape(vector % z, kind=HSIZE_T)/), z_dspace_id)
@@ -776,13 +791,13 @@ contains
          call MOdEM_HDF5_write_dataset(xreal_dset_id, ximag_dset_id, vector % x, x_mem_space_id, x_dspace_id)
 
          ! Attach dimensions to xreal and ximag
-         call ModEM_HDF5_attach_dim(file_id, 'nx', xreal_dset_id, 3)
-         call ModEM_HDF5_attach_dim(file_id, 'nyp1', xreal_dset_id, 2)
-         call ModEM_HDF5_attach_dim(file_id, 'nzp1', xreal_dset_id, 1)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nx', xreal_dset_id, 3)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nyp1', xreal_dset_id, 2)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nzp1', xreal_dset_id, 1)
 
-         call ModEM_HDF5_attach_dim(file_id, 'nx', ximag_dset_id, 3)
-         call ModEM_HDF5_attach_dim(file_id, 'nyp1', ximag_dset_id, 2)
-         call ModEM_HDF5_attach_dim(file_id, 'nzp1', ximag_dset_id, 1)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nx', ximag_dset_id, 3)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nyp1', ximag_dset_id, 2)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nzp1', ximag_dset_id, 1)
 
          !
          ! Y Arrays
@@ -793,13 +808,13 @@ contains
          call ModEM_HDF5_create_complex_dataset(tx_group_id, "y_real", "y_imag", y_dspace_id, yreal_dset_id, yimag_dset_id)
          call MOdEM_HDF5_write_dataset(yreal_dset_id, yimag_dset_id, vector % y, y_mem_space_id, y_dspace_id)
 
-         call ModEM_HDF5_attach_dim(file_id, 'nxp1', yreal_dset_id, 3)
-         call ModEM_HDF5_attach_dim(file_id, 'ny', yreal_dset_id, 2)
-         call ModEM_HDF5_attach_dim(file_id, 'nzp1', yreal_dset_id, 1)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nxp1', yreal_dset_id, 3)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'ny', yreal_dset_id, 2)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nzp1', yreal_dset_id, 1)
 
-         call ModEM_HDF5_attach_dim(file_id, 'nxp1', yimag_dset_id, 3)
-         call ModEM_HDF5_attach_dim(file_id, 'ny', yimag_dset_id, 2)
-         call ModEM_HDF5_attach_dim(file_id, 'nzp1', yimag_dset_id, 1)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nxp1', yimag_dset_id, 3)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'ny', yimag_dset_id, 2)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nzp1', yimag_dset_id, 1)
 
          !
          ! Z Arrays
@@ -810,13 +825,13 @@ contains
          call ModEM_HDF5_create_complex_dataset(tx_group_id, "z_real", "z_imag", z_dspace_id, zreal_dset_id, zimag_dset_id)
          call MOdEM_HDF5_write_dataset(zreal_dset_id, zimag_dset_id, vector % z, z_mem_space_id, z_dspace_id)
 
-         call ModEM_HDF5_attach_dim(file_id, 'nxp1', zreal_dset_id, 3)
-         call ModEM_HDF5_attach_dim(file_id, 'nyp1', zreal_dset_id, 2)
-         call ModEM_HDF5_attach_dim(file_id, 'nz', zreal_dset_id, 1)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nxp1', zreal_dset_id, 3)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nyp1', zreal_dset_id, 2)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nz', zreal_dset_id, 1)
 
-         call ModEM_HDF5_attach_dim(file_id, 'nxp1', zimag_dset_id, 3)
-         call ModEM_HDF5_attach_dim(file_id, 'nyp1', zimag_dset_id, 2)
-         call ModEM_HDF5_attach_dim(file_id, 'nz', zimag_dset_id, 1)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nxp1', zimag_dset_id, 3)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nyp1', zimag_dset_id, 2)
+         call ModEM_HDF5_attach_dim_by_names(file_id, 'nz', zimag_dset_id, 1)
 
          call ModEM_HDF5_close_dataset(xreal_dset_id)
          call ModEM_HDF5_close_dataset(ximag_dset_id)

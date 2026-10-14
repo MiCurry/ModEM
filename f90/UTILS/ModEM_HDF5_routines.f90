@@ -46,9 +46,10 @@ module ModEM_HDF5
         module procedure ModEM_HDF5_read_attr_real_double_2D
     end interface
 
-    interface ModEM_HDF5_attach_dim
+    interface ModEM_HDF5_attach_dim_by_names
         module procedure ModEM_HDF5_attach_dim_by_name
         module procedure ModEM_HDF5_attach_dim_by_id
+        module procedure ModEM_HDF5_attach_dim_by_names
     end interface
 
     abstract interface
@@ -729,6 +730,42 @@ subroutine ModEM_HDF5_attach_dim_by_name(loc_id, dim_name, dset_id, dim, hdferr)
 
 end subroutine ModEM_HDF5_attach_dim_by_name
 
+subroutine ModEM_HDF5_attach_dim_by_names(dim_gid, dim_name, var_gid, var_name, dim, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: dim_gid
+    character (len=*), intent(in) :: dim_name
+    integer (kind=HID_T), intent(in) :: var_gid
+    character (len=*), intent(in) :: var_name
+    integer, intent(in) :: dim
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: dim_dset_id
+    integer (kind=HID_T) :: var_dset_id
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    raise_error = present(hdferr)
+
+    ! First, get the dimension dset id
+    call h5dopen_f(dim_gid, dim_name, dim_dset_id, hdferr_lcl)
+    ! TODO: Error checking..
+
+    ! Next, get the dimension dset id
+    call h5dopen_f(var_gid, var_name, var_dset_id, hdferr_lcl)
+    ! TODO: Error checking
+
+    ! Finally, attach the dimensions
+    call h5dsattach_scale_f(var_dset_id, dim_dset_id, dim, hdferr_lcl)
+    ! TODO: Error checking
+
+    call ModEM_HDF5_close_dataset(dim_dset_id)
+    call ModEM_HDF5_close_dataset(var_dset_id)
+
+end subroutine ModEM_HDF5_attach_dim_by_names
+
 subroutine ModEM_HDF5_attach_dim_by_id(dim_id, dset_id, dim, hdferr)
     
     integer (kind=HID_T), intent(in) :: dim_id 
@@ -754,6 +791,7 @@ subroutine ModEM_HDF5_attach_dim_by_id(dim_id, dset_id, dim, hdferr)
     end if
 
 end subroutine ModEM_HDF5_attach_dim_by_id
+
 
 subroutine ModEM_HDF5_get_dataset_type(dset_id, type_id, hdferr)
 
@@ -1082,6 +1120,48 @@ subroutine ModEM_HDF5_close_dataset(dset_id, hdferr)
     end if
 
 end subroutine ModEM_HDF5_close_dataset
+
+subroutine ModEM_HDF5_add_string_variable(loc_id, name, buf, hdferr)
+
+    use iso_c_binding, only : c_size_t
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: name
+    character (len=*), intent(in) :: buf
+    integer, optional, intent(out) :: hdferr
+
+    logical :: raise_error
+    integer :: hdferr_lcl
+
+    integer (kind=HID_T) :: vspace_id, vtype_id, vdset_id
+    integer (HSIZE_T) :: admins(1)
+
+    character(kind=c_char), dimension(:), allocatable :: str_value_c
+
+    raise_error = present(hdferr)
+
+    admins = [1_hsize_t]
+    call h5screate_f(H5S_SCALAR_F, vspace_id, hdferr_lcl)
+    call h5tcopy_f(H5T_C_S1, vtype_id, hdferr_lcl)
+    allocate(str_value_c(len_trim(buf)+1))
+    str_value_c = trim(buf) // c_null_char
+
+    call h5tset_size_f(vtype_id, int(1, kind=c_size_t), hdferr_lcl)
+    call h5tset_strpad_f(vtype_id, H5T_STR_NULLTERM_F, hdferr_lcl)
+    write(0,*) 'str_value_c size: ', len(str_value_c), str_value_c
+    call h5screate_simple_f(1, (/len(buf, kind=HSIZE_T)+1/), vspace_id, hdferr_lcl)
+    call h5dcreate_f(loc_id, name, vtype_id, vspace_id, vdset_id, hdferr_lcl)
+    call h5dwrite_f(vdset_id, vtype_id, buf, (/1_HSIZE_T/), hdferr_lcl)
+
+    deallocate(str_value_c)
+
+    call ModEM_HDF5_close_dataset(vdset_id)
+    call ModEM_HDF5_close_dataspace(vspace_id)
+    call h5tclose_f(vtype_id, hdferr_lcl)
+
+end subroutine ModEM_HDF5_add_string_variable
 
 subroutine ModEM_HDF5_write_dataset_cptr(dset_id, type, buf, hdferr)
 
@@ -1647,7 +1727,6 @@ subroutine ModEM_HDF5_add_attr_string(loc_id, attr_name, attr_value, hdferr)
 
     ! Create Fortran string type that matches the size of our string
     admins = [1_hsize_t]
-    !call h5screate_simple_f(1, admins, aspace_id, hdferr_lcl)
     call h5screate_f(H5S_SCALAR_F, aspace_id, hdferr_lcl)
     if (hdferr_lcl /= 0) then
         if (raise_error) then
