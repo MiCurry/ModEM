@@ -83,6 +83,20 @@ submodule (ModelSpace) ModelSpaceIO
 #endif
     end interface
 
+#ifdef HDf5
+    interface
+        module subroutine write_geometry_hdf5(file_id, m)
+            implicit none
+            integer(kind=HID_T), intent(in) :: file_id
+            type(modelParam_t), intent(in) :: m
+        end subroutine write_geometry_hdf5
+
+        module subroutine write_sigma_hdf5(file_id, m)
+            integer(kind=HID_T), intent(in) :: file_id
+            type(modelParam_t), intent(in) :: m
+        end subroutine write_sigma_hdf5
+#endif
+
 contains
 
     subroutine unsupported_modelParamIO_error(ftype_choice, input_or_output)
