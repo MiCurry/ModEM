@@ -90,9 +90,11 @@ module subroutine write_modelParam_hdf5(m,cfile,comment)
 
     ! Grid Dimension and refence
     call ModEM_HDF5_add_attr(file_id, 'grid_nx', m % grid % nx)
-!
+
     call write_geometry_hdf5(file_id, m)
+
     !call write_gridSpacing_hdf5(file_id, m)
+
     call write_sigma_hdf5(file_id, m)
 
     ! Close file here
@@ -100,7 +102,7 @@ module subroutine write_modelParam_hdf5(m,cfile,comment)
 
 end subroutine write_modelParam_hdf5
 
-subroutine write_geometry_hdf5(file_id, m)
+module subroutine write_geometry_hdf5(file_id, m)
 
     integer(kind=HID_T), intent(in)      :: file_id
     type(modelParam_t), intent(in)	     :: m
@@ -230,9 +232,11 @@ subroutine write_gridSpacing_hdf5(file_id, m)
 end subroutine write_gridSpacing_hdf5
 
 !******************************************************************
-subroutine write_sigma_hdf5(file_id, m)
-    integer(kind=HID_T), intent(in)                  :: file_id
-    type(modelParam_t), intent(in)	     :: m
+subroutine write_sigma_hdf5(file_id, m, dimension_location)
+
+    integer (kind=HID_T), intent(in)                  :: file_id
+    type (modelParam_t), intent(in)	     :: m
+    integer (kind=HID_T), optional :: dimension_location
 
     ! local variables
     type(grid_t)                          :: grid
@@ -250,18 +254,36 @@ subroutine write_sigma_hdf5(file_id, m)
 
     integer :: err 
 
+    integer (kind=HID_T) :: dims_location_lcl
+
+    if (present(dimension_location)) then
+        dims_location_lcl = dimension_location
+    else
+        dims_location_lcl = file_id
+    end if
+
+    write(0,*) 'write_sigma_hdf5 - 1'
+
     ! Convert modelParam to natural log or log10 for output
     !paramType = userParamType
     paramType = 'LOG10' 
     call getValue_modelParam(m,paramType,ccond)
 
+    write(0,*) 'write_sigma_hdf5 - 2'
+
     grid = ccond%grid
     Nx=grid%nx !this defines the length of the data array
     Ny=grid%ny
     NzEarth=grid%nz - grid%nzAir
+    
+    write(0,*) 'write_sigma_hdf5 - 3'
 
     call ModEM_HDF5_create_dataspace(3, (/int(Ny, kind=HSIZE_T), int(Nx, kind=HSIZE_T), int(NzEarth, kind=HSIZE_T)/), sigma_dspace_id)
+    write(0,*) 'write_sigma_hdf5 - 4'
+
     call ModEM_HDF5_create_dataset(file_id, prop, H5T_NATIVE_DOUBLE, sigma_dspace_id, sigma_dset_id)
+
+    write(0,*) 'write_sigma_hdf5 - 5'
 
     ! Attache the x, y, and z datasets (dimensions) to log_10_sigma.
     ! 
@@ -273,13 +295,18 @@ subroutine write_sigma_hdf5(file_id, m)
     !
     ! For those interested, this will create a DIMENSION_LIST attribute on the HDF5 
     ! log_10_sigma variable and a REFERENCE_LIST on attribute on the dimensions (x, y, z).
-    call ModEM_HDF5_attach_dim(file_id, 'z', sigma_dset_id, 1)
-    call ModEM_HDF5_attach_dim(file_id, 'x', sigma_dset_id, 2)
-    call ModEM_HDF5_attach_dim(file_id, 'y', sigma_dset_id, 3)
+    call ModEM_HDF5_attach_dim(dims_location_lcl, 'z', sigma_dset_id, 1)
+    write(0,*) 'write_sigma_hdf5 - 6'
+    call ModEM_HDF5_attach_dim(dims_location_lcl, 'x', sigma_dset_id, 2)
+    write(0,*) 'write_sigma_hdf5 - 7'
+    call ModEM_HDF5_attach_dim(dims_location_lcl, 'y', sigma_dset_id, 3)
+    write(0,*) 'write_sigma_hdf5 - 8'
 
     ! Assign attribute values
     call ModEM_HDF5_add_attr(sigma_dset_id, 'paramType', 'LOG10')
+    write(0,*) 'write_sigma_hdf5 - 9'
     call ModEM_HDF5_add_attr(sigma_dset_id, 'display_name', 'log(10) electrical conductivity, in Seimens/meter')
+    write(0,*) 'write_sigma_hdf5 - 10'
 
     ! Transpose
     allocate(sigma_out(Ny, Nx, NzEarth))

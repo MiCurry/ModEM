@@ -9,6 +9,10 @@ module sensMatrix
   !    without this metadata, sensitivity matrix is USELESS!
   use transmitters
   use receivers
+  use DataIO
+  use ModEM_HDF5
+  use DataTypes
+
 
   implicit none
 
@@ -316,6 +320,148 @@ Contains
     close(ioSens)
 
   end subroutine write_sensMatrixMTX
+
+  subroutine write_sensMatrixMTX_hdf5(sensMatrix,cfile)
+
+      implicit none
+
+      type(sensMatrix_t), pointer	:: sensMatrix(:)
+      character (len=*), intent(in) :: cfile
+
+
+      type (sensMatrix_t), pointer :: sens
+      integer (kind=HID_T) :: file_id, tx_group_id
+
+      integer :: idt, iTx
+
+      character(len=100) :: tx_group_name
+
+      write(0,*) 'write_sensMatrixMTX_hdf5 - 1'
+
+      call ModEM_HDF5_create_file(cfile, H5F_ACC_TRUNC_F, file_id)
+      call ModEM_HDF5_add_attr(file_id, '_nc3_strict', 1)
+
+      ! Write the rxDict
+      !call write_rxdict(file_id, group_location='rxdict')
+
+      ! Write the grid - Just grab a pointer to the grid..
+      call write_geometry_hdf5(file_id, sensMatrix(1) % v(1) % dm(1,1))
+
+      ! Create a dimension for the number of transmitters
+      call ModEM_HDF5_create_pure_dimension(file_id, 'nTx', size(sensMatrix, kind=HSIZE_T))
+
+      write(0,*) 'write_sensMatrixMTX_hdf5 - 2'
+
+      do iTx = 1, size(sensMatrix)
+
+          ! Create a group for this transmitter
+          sens => sensMatrix(iTx)
+
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 4'
+
+
+          write(tx_group_name, '(A, I4.4)') 'iTx.', iTx
+          call ModEM_HDF5_create_group(file_id, tx_group_name, tx_group_id)
+
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 5'
+
+          ! Create the dimensions
+          call ModEM_HDF5_create_pure_dimension(tx_group_id, 'nDataTypes', int(sens % ndt, kind=HSIZE_T))
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 6'
+
+
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 7'
+
+          ! Create a variable to hold this transmitter's value
+          call ModEM_HDF5_create_scalar_variable(tx_group_id, 'period', txDict(sens % tx) % period)
+
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 8'
+
+          ! Write the sensitivity vectors
+          do idt = 1, sens % ndt
+            write(0,*) 'sensVector - ', iDt, 'tx: ', sens % v(idt) % tx
+            write(0,*) 'sensVector - ', iDt, 'Datatype: ', sens % v(idt) % dataType
+            write(0,*) 'sensVector - ', iDt, 'txType: ', sens % v(idt) % txType
+    
+            call write_sensVector_hdf5(tx_group_id, sens % v(idt), file_id)
+          end do 
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 11'
+
+          call ModEM_HDF5_close_group(tx_group_id)
+          write(0,*) 'write_sensMatrixMTX_hdf5 - 12'
+
+      end do
+
+      call ModEM_HDF5_close_file(file_id)
+  end subroutine write_sensMatrixMTX_hdf5
+
+  function generate_sensVector_group_name(sens_vector) result(gname)
+
+      implicit none
+
+      type (sensVector_t), intent(in) :: sens_vector
+      character (len=512) :: gname  
+
+      character (len=80) :: dataTypeName
+
+      dataTypeName = trim(typeDict(sens_vector % dataType) % name)
+      write(gname, '(A, A, A, I4.4)') 'sensVec.', trim(dataTypeName), '.', sens_vector % tx
+
+  end function generate_sensVector_group_name
+
+
+  subroutine write_sensVector_hdf5(loc_id, sens_vector, file_id)
+
+      implicit none
+
+      integer (kind=HID_T), intent(in) :: loc_id
+      type (sensVector_t), intent(in) :: sens_vector
+      integer (kind=HID_T), intent(in) :: file_id
+
+      integer (kind=HID_T) :: sensVector_gid, sigma_gid
+
+      character(len=512) :: sens_vector_gname, datatype_name, sigma_name
+
+      integer :: iComp, iSite
+
+      datatype_name = trim(typeDict(sens_vector % dataType) % name)
+      sens_vector_gname = generate_sensVector_group_name(sens_vector)
+
+      ! Create a group just for this 
+      call ModEM_HDF5_create_group(loc_id, trim(sens_vector_gname), sensVector_gid)
+
+      call ModEM_HDF5_create_pure_dimension(sensVector_gid, 'nComp', int(sens_vector % nComp, kind=HSIZE_T))
+      call ModEM_HDF5_create_pure_dimension(sensVector_gid, 'nSite', int(sens_vector % nSite, kind=HSIZE_T))
+
+      ! Create a variable for the name of this datatype
+      ! Also create a dimension for this name...
+      call ModEM_HDF5_create_pure_dimension(sensVector_gid, 'DATATYPE_STRLEN', len_trim(datatype_name, kind=HSIZE_T))
+      call ModEM_HDF5_add_string_variable(sensVector_gid, 'datatype', trim(datatype_name))
+      call ModEM_HDF5_attach_dim(sensVector_gid, 'DATATYPE_STRLEN', sensVector_gid, 'datatype', 1)
+
+      ! Write if the sensitivity is complex or not
+      call ModEM_HDF5_create_scalar_variable(sensVector_gid, 'isComplex', sens_vector % isComplex)
+
+      ! Group name for each nComp, nSigma
+
+      ! Write sigma for each
+      do iComp = 1, sens_vector % nComp, 1
+        do iSite = 1, sens_vector % nSite, 1
+            write(sigma_name, '(A, i6.6, A, i6.6)') 'iComp.', iComp, '.iSite.', iSite
+            call ModEM_HDF5_create_group(sensVector_gid, trim(sigma_name), sigma_gid)
+            write(0,*) 'write_sensVector_hdf5 - 6 - iComp: ', iComp, ' iSite: ', iSite, trim(sigma_name)
+            call write_sigma_hdf5(sigma_gid, sens_vector % dm(iComp, iSite), dimension_location=file_id)
+        end do
+      end do
+
+      write(0,*) 'write_sensVector_hdf5 - 7'
+
+      call ModEM_HDF5_close_group(sensVector_gid)
+
+      write(0,*) 'write_sensVector_hdf5 - 8'
+
+  end subroutine write_sensVector_hdf5
+
 
   !*********************************************************************
   ! implements direct (real) matrix vector multiplication d = J m

@@ -46,10 +46,15 @@ module ModEM_HDF5
         module procedure ModEM_HDF5_read_attr_real_double_2D
     end interface
 
-    interface ModEM_HDF5_attach_dim_by_names
+    interface ModEM_HDF5_attach_dim
         module procedure ModEM_HDF5_attach_dim_by_name
         module procedure ModEM_HDF5_attach_dim_by_id
         module procedure ModEM_HDF5_attach_dim_by_names
+    end interface
+
+    interface ModEM_HDF5_create_scalar_variable
+        module procedure ModEM_HDF5_create_scalar_variable_real_double
+        module procedure ModEM_HDF5_create_scalar_variable_logical
     end interface
 
     abstract interface
@@ -469,6 +474,41 @@ subroutine ModEM_HDF5_get_dataspace_dims(dspace_id, dims, maxdims, rank, hdferr)
     end if
 
 end subroutine ModEM_HDF5_get_dataspace_dims
+
+! Convenience function to help us create NETCDF4-CLASSIC pure dimensions.
+! A pure dimension is a dimension that only appears in the dimension of a 
+! NetCDF file and not inside of the 'variables' section. 
+subroutine ModEM_HDF5_create_pure_dimension(loc_id, dim_name, size, dim_id, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: dim_name
+    integer (kind=HSIZE_T), intent(in) :: size
+    integer (kind=HID_T), optional, intent(out) :: dim_id
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: dim_dspace_id, dim_dset_id
+
+    call ModEM_HDF5_create_dataspace(1, (/int(size, kind=HSIZE_T)/), dim_dspace_id)
+    ! TODO: Error checking...
+
+    ! It doesn't actually matter what 'type' we use here (I think)
+    call ModEM_HDF5_create_dataset(loc_id, trim(dim_name), H5T_NATIVE_INTEGER, dim_dspace_id, dim_dset_id)
+    ! TODO: Error checking..
+
+    ! Now make the dimension a NETCDF4-CLASSIC dimension by calling our helper functions
+    ! note that the below call also calls `ModEM_HDF5_make_dataset_dimension`. These 
+    ! simply set HDF5 attributes that tell NetCDF readers that its a dimensinon
+    call ModEM_HDF5_make_dataset_pure_dimension(dim_dset_id)
+    ! TODO: Error checking
+    call ModEM_HDF5_close_dataspace(dim_dspace_id)
+    ! TODO: Error checking
+    call ModEM_HDF5_close_dataset(dim_dset_id)
+    ! TODO: Error checking
+
+end subroutine ModEM_HDF5_create_pure_dimension
+
 
 ! Make an HDF5 dataset a dimemsion in the eyes of NetCDF4. 
 subroutine ModEM_HDF5_make_dataset_dimension(dset_id, hdferr)
@@ -1162,6 +1202,67 @@ subroutine ModEM_HDF5_add_string_variable(loc_id, name, buf, hdferr)
     call h5tclose_f(vtype_id, hdferr_lcl)
 
 end subroutine ModEM_HDF5_add_string_variable
+
+
+subroutine ModEM_HDF5_create_scalar_variable_real_double(loc_id, var_name, var_value, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: var_name
+    real (kind=prec), pointer, intent(in) :: var_value
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: var_dspace_id, var_dset_id
+
+    call ModEM_HDF5_create_scalar_dataspace(var_dspace_id)
+    ! TODO: Error checking
+    call ModEM_HDF5_create_dataset(loc_id, var_name, H5T_NATIVE_DOUBLE, var_dspace_id, var_dset_id)
+    ! TODO: Error checking
+    
+    call ModEM_HDF5_write_dataset(var_dset_id, H5T_NATIVE_DOUBLE, var_value)
+!subroutine ModEM_HDF5_write_dataset_real_double(dset_id, type, buf, hdferr)
+    ! TODO: Error checking
+
+    call ModEM_HDF5_close_dataset(var_dset_id)
+    ! TODO: Error checking
+
+    call ModEM_HDf5_close_dataspace(var_dspace_id)
+    ! TODO: Error checking
+
+end subroutine ModEM_HDF5_create_scalar_variable_real_double
+
+subroutine ModEM_HDf5_create_scalar_variable_logical(loc_id, var_name, var_value, hdferr)
+
+    implicit none
+
+    integer (kind=HID_T), intent(in) :: loc_id
+    character (len=*), intent(in) :: var_name
+    logical, intent(in) :: var_value
+    integer, optional, intent(out) :: hdferr
+
+    integer (kind=HID_T) :: var_dspace_id, var_dset_id
+
+    call ModEM_HDF5_create_scalar_dataspace(var_dspace_id)
+    ! TODO: Error checking
+
+    call ModEM_HDF5_create_dataset(loc_id, var_name, H5T_NATIVE_INTEGER, var_dspace_id, var_dset_id)
+    ! TODO: Error checking
+    
+    if (var_value) then
+        call ModEM_HDF5_write_dataset(var_dset_id, H5T_NATIVE_INTEGER, 1)
+    else 
+        call ModEM_HDF5_write_dataset(var_dset_id, H5T_NATIVE_INTEGER, 0)
+    end if
+    ! TODO: Error checking
+
+    call ModEM_HDF5_close_dataset(var_dset_id)
+    ! TODO: Error checking
+
+    call ModEM_HDf5_close_dataspace(var_dspace_id)
+    ! TODO: Error checking
+
+end subroutine ModEM_HDF5_create_scalar_variable_logical
 
 subroutine ModEM_HDF5_write_dataset_cptr(dset_id, type, buf, hdferr)
 

@@ -3,6 +3,7 @@ module DataIO
 
     use utilities
     use dataspace
+    use ModEM_HDF5
 
     implicit none
 
@@ -75,6 +76,18 @@ module DataIO
         end subroutine write_data_hdf5
 #endif
     end interface
+
+
+#ifdef HDF5
+    interface
+        module subroutine write_rxdict(file_id, group_location)
+            implicit none
+            integer (kind=HID_T), intent(in) :: file_id
+            character (len=*), optional :: group_location
+        end subroutine write_rxDict
+    end interface
+#endif
+
 
     ! Cleanup - Dallocating
     interface

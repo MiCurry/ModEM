@@ -91,11 +91,34 @@ submodule (ModelSpace) ModelSpaceIO
             type(modelParam_t), intent(in) :: m
         end subroutine write_geometry_hdf5
 
-        module subroutine write_sigma_hdf5(file_id, m)
-            integer(kind=HID_T), intent(in) :: file_id
-            type(modelParam_t), intent(in) :: m
+        module subroutine write_sigma_hdf5(file_id, m, dimension_location)
+            integer (kind=HID_T), intent(in) :: file_id
+            type (modelParam_t), intent(in) :: m
+            integer (kind=HID_T), optional :: dimension_location
         end subroutine write_sigma_hdf5
+    end interface
 #endif
+
+    ! Read/write ModelParam Vec for Sensitivity Matrix
+    interface
+        module subroutine readVec_modelParam_binary(grid,nSigma,m,header,cfile)
+            implicit none
+            type(grid_t), target, intent(inout)      :: grid
+            integer, intent(in)              :: nSigma
+            type(modelParam_t), intent(inout)   :: m(nSigma)
+            character(*), intent(in)          :: cfile
+            character(80), intent(out)        :: header
+        end subroutine readVec_modelParam_binary
+    end interface
+
+    interface
+        module subroutine writeVec_modelParam_binary(nSigma,m,header,cfile)
+            implicit none
+            integer, intent(in)               :: nSigma
+            character(*), intent(in)          :: cfile, header
+            type(modelParam_t), intent(in)      :: m(nSigma)
+        end subroutine writeVec_modelParam_binary
+    end interface
 
 contains
 
@@ -223,15 +246,19 @@ contains
       character(*), intent(out)		:: header
       character(*), intent(in)		:: cfile
 
+      call readVec_modelParam_binary(grid, nSigma, sigma, header, Cfile)
+
     end subroutine readVec_modelParam
 
     module subroutine writeVec_modelParam(nSigma,sigma,header,cfile)
 
-        implicit none
+       implicit none
 
-        integer, intent(in)		:: nSigma
-        character(*), intent(in)		:: header, cfile
-        type(modelParam_t), intent(in)	:: sigma(nSigma)
+       integer, intent(in)		:: nSigma
+       character(*), intent(in)		:: header, cfile
+       type(modelParam_t), intent(in)	:: sigma(nSigma)
+
+       call writeVec_modelParam_binary(nSigma, sigma, header, cfile)
 
     end subroutine writeVec_modelParam
 

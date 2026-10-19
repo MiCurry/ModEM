@@ -215,7 +215,11 @@ program Mod3DMT
 #else
         call calcJ(allData,sigma0,sens)
 #endif
+#ifdef HDF5
+        call write_sensMatrixMTX_hdf5(sens,cUserDef%wFile_Sens)
+#else
         call write_sensMatrixMTX(sens,cUserDef%wFile_Sens)
+#endif
 
      case (MULT_BY_J)
         write(*,*) 'Multiplying by J...'
@@ -446,7 +450,7 @@ program Mod3DMT
      if (write_EMsoln) then
          ! write out EM solutions
          write(*,*) 'Saving the EM solution...'
-         call write_solnVectorMTX(eAll,cUserDef%wFile_EMsoln)
+         !call write_solnVectorMTX(eAll,cUserDef%wFile_EMsoln)
      end if
 
      if (write_EMrhs) then

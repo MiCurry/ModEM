@@ -165,6 +165,22 @@ interface
     end subroutine writeVec_modelParam
 end interface
 
+#ifdef HDF5
+interface
+    module subroutine write_geometry_hdf5(file_id, m)
+        implicit none
+        integer(kind=HID_T), intent(in)      :: file_id
+        type(modelParam_t), intent(in)	     :: m
+    end subroutine write_geometry_hdf5
+
+    module subroutine write_sigma_hdf5(file_id, m, dimension_location)
+        integer (kind=HID_T), intent(in) :: file_id
+        type (modelParam_t), intent(in) :: m
+        integer (kind=HID_T), optional :: dimension_location
+    end subroutine write_sigma_hdf5
+end interface
+#endif
+
 ! definitions for CmSqrt: must be consistent with the include file below
 
 #include "modelCov/RecursiveAR.hd"

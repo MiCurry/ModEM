@@ -123,11 +123,12 @@ subroutine write_txdict(file_id, allData)
 
 end subroutine write_txdict
 
-subroutine write_rxdict(file_id)
+subroutine write_rxdict(file_id, group_location)
 
     implicit none
 
     integer (kind=HID_T), intent(in) :: file_id
+    character (len=*), optional  :: group_location
 
     integer (kind=HID_T) :: rx_group_id
     integer (kind=HID_T) :: rx_dspace_id
@@ -145,8 +146,19 @@ subroutine write_rxdict(file_id)
     real (kind=prec), pointer :: rxdict_xyz(:,:)
     
     character (len=5), pointer, dimension(:) :: rxdict_codes 
+    character (len=256) :: group_location_lcl
 
-    call ModEM_HDF5_create_group(file_id, 'Data/MT/rxdict', rx_group_id)
+
+    if (present(group_location)) then
+        group_location_lcl = trim(group_location)
+    else
+        group_location_lcl = 'Data/MT/rxdict'
+
+    end if
+
+    write(0,*) "Creating rxdict group at group location: ", trim(group_location_lcl)
+
+    call ModEM_HDF5_create_group(file_id, trim(group_location_lcl), rx_group_id)
 
     n_recivers = size(rxDict)
 
