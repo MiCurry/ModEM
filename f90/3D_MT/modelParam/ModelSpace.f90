@@ -173,10 +173,11 @@ interface
         type(modelParam_t), intent(in)	     :: m
     end subroutine write_geometry_hdf5
 
-    module subroutine write_sigma_hdf5(file_id, m, dimension_location)
+    module subroutine write_sigma_hdf5(file_id, m, dimension_location, var_name)
         integer (kind=HID_T), intent(in) :: file_id
         type (modelParam_t), intent(in) :: m
         integer (kind=HID_T), optional :: dimension_location
+        character (len=*), optional :: var_name
     end subroutine write_sigma_hdf5
 end interface
 #endif

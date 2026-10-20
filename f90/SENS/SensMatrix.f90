@@ -336,8 +336,6 @@ Contains
 
       character(len=100) :: tx_group_name
 
-      write(0,*) 'write_sensMatrixMTX_hdf5 - 1'
-
       call ModEM_HDF5_create_file(cfile, H5F_ACC_TRUNC_F, file_id)
       call ModEM_HDF5_add_attr(file_id, '_nc3_strict', 1)
 
@@ -350,32 +348,19 @@ Contains
       ! Create a dimension for the number of transmitters
       call ModEM_HDF5_create_pure_dimension(file_id, 'nTx', size(sensMatrix, kind=HSIZE_T))
 
-      write(0,*) 'write_sensMatrixMTX_hdf5 - 2'
-
       do iTx = 1, size(sensMatrix)
 
           ! Create a group for this transmitter
           sens => sensMatrix(iTx)
 
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 4'
-
-
           write(tx_group_name, '(A, I4.4)') 'iTx.', iTx
           call ModEM_HDF5_create_group(file_id, tx_group_name, tx_group_id)
 
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 5'
-
           ! Create the dimensions
           call ModEM_HDF5_create_pure_dimension(tx_group_id, 'nDataTypes', int(sens % ndt, kind=HSIZE_T))
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 6'
-
-
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 7'
 
           ! Create a variable to hold this transmitter's value
           call ModEM_HDF5_create_scalar_variable(tx_group_id, 'period', txDict(sens % tx) % period)
-
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 8'
 
           ! Write the sensitivity vectors
           do idt = 1, sens % ndt
@@ -385,11 +370,8 @@ Contains
     
             call write_sensVector_hdf5(tx_group_id, sens % v(idt), file_id)
           end do 
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 11'
 
           call ModEM_HDF5_close_group(tx_group_id)
-          write(0,*) 'write_sensMatrixMTX_hdf5 - 12'
-
       end do
 
       call ModEM_HDF5_close_file(file_id)
@@ -418,11 +400,12 @@ Contains
       type (sensVector_t), intent(in) :: sens_vector
       integer (kind=HID_T), intent(in) :: file_id
 
-      integer (kind=HID_T) :: sensVector_gid, sigma_gid
+      integer (kind=HID_T) :: sensVector_gid, sigma_gid, site_group_id
 
-      character(len=512) :: sens_vector_gname, datatype_name, sigma_name
+      character(len=512) :: sens_vector_gname, datatype_name, var_name
+      character(len=512) :: site_group_name
 
-      integer :: iComp, iSite
+      integer :: iComp, iSite, iCompType, skipCompsBy
 
       datatype_name = trim(typeDict(sens_vector % dataType) % name)
       sens_vector_gname = generate_sensVector_group_name(sens_vector)
@@ -442,23 +425,56 @@ Contains
       ! Write if the sensitivity is complex or not
       call ModEM_HDF5_create_scalar_variable(sensVector_gid, 'isComplex', sens_vector % isComplex)
 
-      ! Group name for each nComp, nSigma
+      if (sens_vector % isComplex) then
+          skipCompsBy = 2
+      else
+          skipCompsBy = 1
+      end if 
+
+      iCompType = 1
 
       ! Write sigma for each
-      do iComp = 1, sens_vector % nComp, 1
-        do iSite = 1, sens_vector % nSite, 1
-            write(sigma_name, '(A, i6.6, A, i6.6)') 'iComp.', iComp, '.iSite.', iSite
-            call ModEM_HDF5_create_group(sensVector_gid, trim(sigma_name), sigma_gid)
-            write(0,*) 'write_sensVector_hdf5 - 6 - iComp: ', iComp, ' iSite: ', iSite, trim(sigma_name)
-            call write_sigma_hdf5(sigma_gid, sens_vector % dm(iComp, iSite), dimension_location=file_id)
-        end do
-      end do
+      do iSite = 1, sens_vector % nSite, 1
+        site_group_name(:) = ''
+        write(site_group_name, '(A)') trim(rxDict(iSite) % id(1:6))
+        call ModEM_HDF5_create_group(sensVector_gid, trim(site_group_name), site_group_id)
 
-      write(0,*) 'write_sensVector_hdf5 - 7'
+        write(0,*) 'Site_group_name: ', trim(site_group_name), 'nComp: ', sens_vector % nComp
+        iCompType = 1
+        do iComp = 1, sens_vector % nComp, skipCompsBy
+            if (sens_vector % isComplex) then
+
+                ! Real component
+                write(var_name, '(A5, A)') trim(typeDict(sens_vector % dataType) % id(iCompType)(1:6)), '.real'
+                write(0,*) 'Going to write var_name: ', trim(var_name), ' iComp: ', iComp, iCompType
+                call write_sigma_hdf5(site_group_id, sens_vector % dm(iComp, iSite), dimension_location=file_id, &
+                    var_name=trim(var_name))
+
+                ! Imaginary component
+                write(var_name, '(A5, A)') trim(typeDict(sens_vector % dataType) % id(iCompType)(1:6)), '.imag'
+                write(0,*) 'Going to write var_name: ', trim(var_name), ' iComp: ', iComp, iCompType
+                call write_sigma_hdf5(site_group_id, sens_vector % dm(iComp+1, iSite), dimension_location=file_id, &
+                    var_name=trim(var_name))
+
+                iCompType = iCompType + 1
+            else
+
+                ! Non-Complex Data Types
+                write(var_name, '(A)') trim(typeDict(sens_vector % dataType) % id(iComp)(1:6))
+                write(0,*) 'Going to write var_name: ', trim(var_name), ' iComp: ', iComp
+                call write_sigma_hdf5(site_group_id, sens_vector % dm(iComp, iSite), dimension_location=file_id, &
+                    var_name=trim(var_name))
+                iCompType = iCompType + 1
+            end if
+
+
+        end do
+
+        call ModEM_HDF5_close_group(site_group_id)
+      end do
 
       call ModEM_HDF5_close_group(sensVector_gid)
 
-      write(0,*) 'write_sensVector_hdf5 - 8'
 
   end subroutine write_sensVector_hdf5
 
