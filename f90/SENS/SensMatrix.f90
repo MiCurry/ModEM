@@ -10,7 +10,9 @@ module sensMatrix
   use transmitters
   use receivers
   use DataIO
+#ifdef HDF5
   use ModEM_HDF5
+#endif
   use DataTypes
 
 
@@ -321,6 +323,7 @@ Contains
 
   end subroutine write_sensMatrixMTX
 
+#ifdef HDF5
   subroutine write_sensMatrixMTX_hdf5(sensMatrix,cfile)
 
       implicit none
@@ -364,10 +367,6 @@ Contains
 
           ! Write the sensitivity vectors
           do idt = 1, sens % ndt
-            write(0,*) 'sensVector - ', iDt, 'tx: ', sens % v(idt) % tx
-            write(0,*) 'sensVector - ', iDt, 'Datatype: ', sens % v(idt) % dataType
-            write(0,*) 'sensVector - ', iDt, 'txType: ', sens % v(idt) % txType
-    
             call write_sensVector_hdf5(tx_group_id, sens % v(idt), file_id)
           end do 
 
@@ -387,9 +386,35 @@ Contains
       character (len=80) :: dataTypeName
 
       dataTypeName = trim(typeDict(sens_vector % dataType) % name)
-      write(gname, '(A, A, A, I4.4)') 'sensVec.', trim(dataTypeName), '.', sens_vector % tx
+      write(gname, '(A)') trim(dataTypeName)
 
   end function generate_sensVector_group_name
+
+  function generate_sens_variable_name(sens_vector, iComp, complex_part) result(var_name)
+
+      implicit none
+
+      type (sensVector_t), intent(in) :: sens_vector
+      integer, intent(in) :: iComp
+      character (len=*), optional, intent(in) :: complex_part
+
+      character (len=256) :: var_name
+      character (len=256) :: complex_part_lcl
+
+      if (present(complex_part)) then
+          complex_part_lcl = complex_part
+      else
+          complex_part_lcl = ''
+      end if
+
+
+      if (sens_vector % isComplex) then
+          write(var_name, '(A5, A, A)') trim(typeDict(sens_vector % dataType) % id(iComp)), '.', trim(complex_part_lcl)
+      else
+          write(var_name, '(A5)') trim(typeDict(sens_vector % dataType) % id(iComp))
+      end if
+
+  end function generate_sens_variable_name
 
 
   subroutine write_sensVector_hdf5(loc_id, sens_vector, file_id)
@@ -436,32 +461,29 @@ Contains
       ! Write sigma for each
       do iSite = 1, sens_vector % nSite, 1
         site_group_name(:) = ''
+
         write(site_group_name, '(A)') trim(rxDict(iSite) % id(1:6))
         call ModEM_HDF5_create_group(sensVector_gid, trim(site_group_name), site_group_id)
 
-        write(0,*) 'Site_group_name: ', trim(site_group_name), 'nComp: ', sens_vector % nComp
         iCompType = 1
         do iComp = 1, sens_vector % nComp, skipCompsBy
-            if (sens_vector % isComplex) then
-
+            if (sens_vector % isComplex) then ! Complex data types, write both real and imaginary parts
                 ! Real component
-                write(var_name, '(A5, A)') trim(typeDict(sens_vector % dataType) % id(iCompType)(1:6)), '.real'
-                write(0,*) 'Going to write var_name: ', trim(var_name), ' iComp: ', iComp, iCompType
+                !write(var_name, '(A5, A)') trim(typeDict(sens_vector % dataType) % id(iCompType)(1:6)), '.real'
+                var_name = generate_sens_variable_name(sens_vector, iCompType, 'real')
                 call write_sigma_hdf5(site_group_id, sens_vector % dm(iComp, iSite), dimension_location=file_id, &
                     var_name=trim(var_name))
 
                 ! Imaginary component
-                write(var_name, '(A5, A)') trim(typeDict(sens_vector % dataType) % id(iCompType)(1:6)), '.imag'
-                write(0,*) 'Going to write var_name: ', trim(var_name), ' iComp: ', iComp, iCompType
+                !write(var_name, '(A5, A)') trim(typeDict(sens_vector % dataType) % id(iCompType)(1:6)), '.imag'
+                var_name = generate_sens_variable_name(sens_vector, iCompType, 'imag')
                 call write_sigma_hdf5(site_group_id, sens_vector % dm(iComp+1, iSite), dimension_location=file_id, &
                     var_name=trim(var_name))
 
                 iCompType = iCompType + 1
-            else
-
-                ! Non-Complex Data Types
-                write(var_name, '(A)') trim(typeDict(sens_vector % dataType) % id(iComp)(1:6))
-                write(0,*) 'Going to write var_name: ', trim(var_name), ' iComp: ', iComp
+            else ! Non-Complex data types - just write the component
+                !write(var_name, '(A)') trim(typeDict(sens_vector % dataType) % id(iComp)(1:6))
+                var_name = generate_sens_variable_name(sens_vector, iCompType)
                 call write_sigma_hdf5(site_group_id, sens_vector % dm(iComp, iSite), dimension_location=file_id, &
                     var_name=trim(var_name))
                 iCompType = iCompType + 1
@@ -477,6 +499,7 @@ Contains
 
 
   end subroutine write_sensVector_hdf5
+#endif
 
 
   !*********************************************************************
