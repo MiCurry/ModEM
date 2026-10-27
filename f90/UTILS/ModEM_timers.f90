@@ -21,6 +21,8 @@ module ModEM_timers
         integer (c_int) :: id
 
         logical :: is_running = .false.
+        ! If a timer is private, it will not be included in global reports
+        logical :: private = .false.
 
         integer :: hours = 0
         integer :: mins = 0
@@ -360,13 +362,16 @@ module ModEM_timers
 
     end subroutine ModEM_timers_print
 
-    subroutine ModEM_timers_print_all(file)
+    subroutine ModEM_timers_print_all(file, print_private)
 
         implicit none
 
         integer, optional :: file
+        logical, optional :: print_private
         integer :: file_descriptor
         type(ModEM_timer_t), pointer :: cur
+
+        logical :: print_private_lcl
 
         if (present(file)) then
             file_descriptor = file
@@ -374,20 +379,29 @@ module ModEM_timers
             file_descriptor = 0
         end if
 
+        if (present(print_private)) then
+            print_private_lcl = print_private
+        else
+            print_private_lcl = .false.
+        end if
+
         cur => timers % next
 
         do while (associated(cur))
-            call ModEM_timers_print(cur % name, file_descriptor)
+            if (.not. cur % private .or. print_private_lcl) then
+                call ModEM_timers_print(cur % name, file_descriptor)
+            end if
             cur => cur % next
         end do
 
     end subroutine ModEM_timers_print_all
 
-    subroutine ModEM_timers_report(file)
+    subroutine ModEM_timers_report(file, print_private)
 
         implicit none
 
         integer, intent(in), optional :: file
+        logical, intent(in), optional :: print_private
         integer :: file_descriptor
 
         if (present(file)) then
@@ -398,7 +412,7 @@ module ModEM_timers
 
         write(file_descriptor,*) "============= ModEM Run Report ============"
 
-        call ModEM_timers_print_all(file_descriptor)
+        call ModEM_timers_print_all(file_descriptor, print_private=print_private)
 
         write(file_descriptor,*) "============================"
 
