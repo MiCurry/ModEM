@@ -1966,6 +1966,8 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          which_per=worker_job_task%per_index
          which_pol=worker_job_task%pol_index
 
+         write(0,*) 'Master Job Time: ', worker_job_task % job_time_secs, ' From: "', who, ' for: ', which_per, ' Pol: ', which_pol
+
          modem_ctx % comm_current = comm_current
 
          if (trim(job_name) == 'FORWARD' .or. trim(job_name) == 'JmultT'  & 
@@ -2134,16 +2136,25 @@ end subroutine Master_job_Distribute_Taskes
 subroutine worker_forward(sigma, d, per_index, pol_index, &
                                   comm_current, rank_current, time_passed)
 ! Handle FORWARD modeling task
+    use iso_fortran_env, only : int64
+
      implicit none
      type(modelParam_t), intent(inout) :: sigma
      type(dataVectorMTX_t), intent(inout) :: d
      integer, intent(in) :: per_index, pol_index
      integer, intent(in) :: comm_current, rank_current
      double precision, intent(out) :: time_passed
+
+     type(ModEM_timer_t), pointer :: timer
      
+     integer (kind=int64) :: total_secs
+
      integer :: des_index, iTx
      double precision :: now
      
+     call ModEM_timers_create('worker_forward', start_now=.true.)
+     call ModEM_timers_start('worker_forward')
+
      ! Broadcast to local workers if group leader
      if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
          do des_index=1, size_local-1
@@ -2182,11 +2193,18 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
          endif
 #endif
      end if
+
+     call ModEM_timers_stop('worker_forward', accumulate=.false.)
+     call ModEM_timers_print('worker_forward')
+     timer => ModEM_timers_get('worker_forward')
+
+     write(0,*) 'Worker forward time (secs):', timer % total_nsecs, timer % total_secs, ' Period: ', per_index, ' Polarization: ', pol_index
      
      ! Send results back to master
      if ((rank_local.eq.0) .or. (para_method.eq.0)) then
          call create_worker_job_task_place_holder
          worker_job_task%taskid=rank_current
+         worker_job_task%job_time_secs = timer % total_secs
          call Pack_worker_job_task
          call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
     &                FROM_WORKER, comm_current, ierr)
@@ -2374,6 +2392,8 @@ subroutine worker_jmultt(sigma, d, per_index, pol_index, &
      
      integer :: des_index, iTx, ipol
      double precision :: now
+
+     call ModEM_timers_create('worker_jmultt', start_now=.true.)
      
      ! Broadcast to local workers
      if ((size_local.gt.1).and.(para_method.gt.0).and.(rank_local.eq.0)) then
@@ -2431,6 +2451,10 @@ subroutine worker_jmultt(sigma, d, per_index, pol_index, &
      end if
      
      call reset_e_soln(e)
+
+     call ModEM_timers_stop('worker_jmultt', accumulate=.false.)
+     call ModEM_timers_print('worker_jmultt')
+     call ModEM_timers_destroy('worker_jmultt')
      
      ! Send results back (leader only)
      if ((rank_local.eq.0) .or. (para_method.eq.0)) then

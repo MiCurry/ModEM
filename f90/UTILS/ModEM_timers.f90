@@ -43,7 +43,7 @@ module ModEM_timers
     integer, parameter :: NSECS_TO_SECS = 1000000000
 
 #ifndef USE_C_TIMERS
-    integer, private, parameter :: MAX_FORTRAN_TIMERS = 100
+    integer, private, parameter :: MAX_FORTRAN_TIMERS = 1000
     integer (int64), private :: fortran_clock_rate
     integer (int64), private, dimension(MAX_FORTRAN_TIMERS) :: fortran_timers_start
     integer (int64), private, dimension(MAX_FORTRAN_TIMERS) :: fortran_timers_end
@@ -55,6 +55,7 @@ module ModEM_timers
     public ModEM_timers_start, ModEM_timers_stop, ModEM_timers_stop_all
     public ModEM_timers_exist, ModEM_timers_get
     public ModEM_timers_print, ModEM_timers_print_all, ModEM_timers_report
+    public ModEM_timers_get_time_secs
 
     ! The following will not be public in ModEM (only public for unit testing)
     public accumulate_time, convert_time
@@ -143,6 +144,26 @@ module ModEM_timers
         end do
 
     end function ModEM_timers_get
+
+
+    function ModEM_timers_get_time_secs(timer_name) result(time)
+
+        implicit none
+
+        character (len=*), intent(in) :: timer_name
+        integer (kind=int64) :: time
+
+        type (ModEM_timer_t), pointer :: timer
+
+        timer => ModEM_timers_get(timer_name)
+        if (associated(timer)) then
+            time = timer % total_nsecs 
+        else
+            time = 0.0d0
+        end if
+
+    end function ModEM_timers_get_time_secs
+
 
     subroutine ModEM_timers_start_machine(timer)
 
