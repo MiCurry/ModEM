@@ -6,6 +6,7 @@ program Mod3DMT
 !              College of Earth, Ocean and Atmospheric Sciences
 
      use ModEM_timers
+     use ModEM_profiler
      use SensComp
      use SymmetryTest
      use Main
@@ -258,6 +259,7 @@ program Mod3DMT
 
      case (INVERSE)
          call ModEM_timers_start("Total Inverse")
+         call ModEM_profiler_init(size(txdict), 2)
          if (trim(cUserDef%search) == 'NLCG') then
             ! sigma1 contains mHat on input (zero = starting from the prior)
              write(*,*) 'Starting the NLCG search...'

@@ -21,6 +21,7 @@ module Main_MPI
 
   use EsolnManager
   use ModEM_timers
+  use ModEM_profiler
   ! use ioascii
 
   implicit none
@@ -636,6 +637,7 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm,label)
      Integer        :: per_index,pol_index,stn_index,iTx,i,iDt,j
      character(80)  :: job_name
      character(len=80) :: label_lcl
+     logical :: do_normal_forward = .true.
 
      if (present(label)) then
          label_lcl = label
@@ -672,7 +674,13 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm,label)
      end if
 
      job_name= 'FORWARD'
-     call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
+     if (do_normal_forward) then
+        call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
+        do_normal_forward = .false.
+     else
+        call Master_job_smart_distribute(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
+        do_normal_forward = .true.
+     end if
 
      ! Calculate Data Response
      call Master_job_DataResp(nTx, sigma, eAll, d1, label=label_lcl)
@@ -683,7 +691,168 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm,label)
      write(ioMPI,*)'FWD: TIME REQUIERED: ',time_used ,'s'
      call deall (e0)
 
+     write(0,*) 'Printing priority queue:'
+     call ModEM_pque_print()
+     call ModEM_pque_rescale_weights(number_of_workers)
+
 end subroutine Master_job_fwdPred
+
+subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, label)
+
+    implicit none
+
+    character(len=*), intent(in) :: job_name
+    integer, intent(in) :: nTx
+    type(modelParam_t), intent(in) :: sigma
+    type(solnVectorMTX_t), intent(in) :: eAll_out
+    integer, intent(in), optional :: comm
+    character(len=*), intent(in), optional :: label
+
+    logical, dimension(number_of_workers) :: task_is_working
+    logical, dimension(nTx, 2) :: transmitters_processing, transmitters_done
+
+    integer :: iTx
+    integer :: iPol
+    real (kind=real64) :: weight
+    integer :: scaled_weight, group_id, iWorkers
+    logical :: sending
+    integer, dimension(number_of_workers) :: tasks_on_job
+    integer, dimension(number_of_workers, 2) :: worker_assignment
+    integer :: which_per, pol_index
+    logical :: flag, more_to_send
+    integer :: nWorkers
+
+    sending = .true.
+    task_is_working(:) = .false.
+    transmitters_processing(:,:) = .false.
+    transmitters_done(:,:) = .false.
+
+    write(0,*) " WE ARE BACK IN SMART DISTRIBUTE!"
+
+    write(0,*) 'Number of workers: ', number_of_workers
+    worker_assignment(:,:) = -1
+
+
+    more_to_send = .true.
+    do while (sending)
+
+        ! Get the largest weighted transmitter
+        if (ModEM_pque_is_empty()) then
+            write(0,*) 'Priority queue is empty, stopping sending tasks'
+            more_to_send = .false.
+        end if
+
+        if (ModEM_pque_is_empty() .and. .not. more_to_send) then
+            sending = .false.
+            cycle
+        end if
+        call ModEM_pque_peek(iTx, iPol, weight, scaled_weight)
+
+        ! Start Tasks - Start with the biggest task first if we have enough CPUs
+        if (count(task_is_working(:) .eqv. .false.) >= scaled_weight .and. more_to_send) then
+            ! Mark the transmitter as being processed
+
+            call ModEM_pque_pop(iTx, iPol, weight, scaled_weight)
+            write(0,*) 'Popped transmitter ', iTx, ' pol ', iPol, ' with weight ', weight, ' and scaled weight ', scaled_weight
+
+            call ModEM_pque_print()
+            transmitters_processing(iTx, iPol) = .true.
+
+            ! Pick scaled_wight MPI tasks to work on this transmitter
+            tasks_on_job(:) = -1
+            nWorkers = 1
+            do iWorkers = 1, number_of_workers
+                if (.not. task_is_working(iWorkers)) then
+                    task_is_working(nWorkers) = .true.
+                    tasks_on_job(nWorkers) = iWorkers
+                    worker_assignment(nWorkers, 1) = iTx
+                    worker_assignment(nWorkers, 2) = iPol
+                    nWorkers = nWorkers + 1
+                end if
+
+                if (count(tasks_on_job(:) /= 0) == scaled_weight) then
+                    exit
+                end if
+            end do
+
+            write(0,*) 'Tasks assigned for transmitter ', iTx, ' pol ', iPol, ': ', tasks_on_job(:)
+
+            ! Tell each assigned worker 
+            if (count(tasks_on_job(:) /= -1) == 1) then
+                ! We just one one task
+                call create_worker_job_task_place_holder
+                worker_job_Task % per_index = iTx
+                worker_job_task % pol_index = iPol
+                worker_job_task % what_to_do = trim(job_name)
+                worker_job_task % label = trim(label)
+                write(0,*) 'Assigning single task for transmitter ', iTx, ' pol ', iPol, 'sending to: ', tasks_on_job(1)
+                call Pack_worker_job_task
+                who = tasks_on_job(1)
+                call MPI_send(worker_job_package, Nbytes, MPI_PACKED, who, FROM_MASTER, MPI_COMM_WORLD, ierr)
+            else
+                group_id = ((iTx - 1) * 2) + iPol
+                write(0,*) "We have assigned tasks: ", tasks_on_job(:), 'for transmitter ', iTx, ' pol ', iPol, ' with weight ', scaled_weight, ' and group_id ', group_id
+                call Master_job_assign_group(tasks_on_job(:), group_id)
+                !
+                ! Send out this job
+                !
+                write(0,*) 'Sending forward worker job task for transmitter ', iTx, ' pol ', iPol, ' with job name ', trim(job_name)
+                call create_worker_job_task_place_holder
+                worker_job_Task % per_index = iTx
+                worker_job_task % pol_index = iPol
+                worker_job_task % what_to_do = trim(job_name)
+                worker_job_task % label = trim(label)
+                call Pack_worker_job_task
+                who = tasks_on_job(1)
+                call MPI_send(worker_job_package, Nbytes, MPI_PACKED, who, FROM_MASTER, MPI_COMM_WORLD, ierr)
+            end if
+        end if
+
+        call MPI_Iprobe(MPI_ANY_SOURCE, FROM_WORKER, MPI_COMM_WORLD, flag, STATUS, ierr)
+        if (flag) then ! Someone is sending us a message
+            write(0,*) 'Receiving worker job task from any source'
+            call create_worker_job_task_place_holder
+            call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED, MPI_ANY_SOURCE, FROM_WORKER, MPI_COMM_WORLD, STATUS, ierr)
+            call unpack_worker_job_task
+            who = worker_job_task % taskid
+            which_per = worker_job_task % per_index
+            pol_index = worker_job_task % pol_index
+
+            transmitters_done(which_per, pol_index) = .true.
+
+            write(0,*) 'Worker job task details: who=', who, ' which_per=', which_per, ' pol_index=', pol_index
+
+            if (trim(job_name) == 'FORWARD' .or. trim(job_name) == 'JmultT'  & 
+                .or. trim(job_name) == 'Jmult') then
+                    call EsMgr_get(eAll_out % solns(which_per), which_per, pol_index=pol_index, from=who)
+            end if
+
+            ! Tell the worker to abandon the group
+            call create_worker_job_task_place_holder
+            worker_job_task % what_to_do = trim('ABANDON GROUP')
+            call Pack_worker_job_task
+            who = tasks_on_job(1)
+            call MPI_send(worker_job_package, Nbytes, MPI_PACKED, who, FROM_MASTER, MPI_COMM_WORLD, ierr)
+
+            ! Reclaim the workers that were on this task
+            do iWorkers = 1, number_of_workers
+                if (worker_assignment(iWorkers, 1) == which_per .and. worker_assignment(iWorkers, 2) == pol_index) then
+                    worker_assignment(iWorkers, 1) = -1
+                    worker_assignment(iWorkers, 2) = -1
+                    task_is_working(iWorkers) = .false.
+                end if
+            end do
+        end if
+
+        ! 
+        ! Recievers...
+        !
+    end do
+
+
+    write(0,*) "We are done with smart distribution!"
+end subroutine Master_job_smart_distribute
+
 
 !----------------------------------------------------------------------------
 !##########################  Master_job_DataResp ############################
@@ -1883,7 +2052,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      if (rank_local.eq.-1) then ! first run!
      ! run initial regroup -- note this requires the comm to be
      ! comm_world as it is the only comm that works in this stage
-         call Master_job_Regroup(nTx,nPol_MPI,comm)
+         !call Master_job_Regroup(nTx,nPol_MPI,comm)
          if (para_method.gt.0) then
              comm_current = comm_leader
          else
@@ -1967,6 +2136,10 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
          which_pol=worker_job_task%pol_index
 
          write(0,*) 'Master Job Time: ', worker_job_task % job_time_secs, ' From: "', who, ' for: ', which_per, ' Pol: ', which_pol
+
+         if (trim(job_name) == "FORWARD") then
+            call ModEM_profiler_record(which_per, which_pol, worker_job_task % job_time_secs)
+         end if
 
          modem_ctx % comm_current = comm_current
 
@@ -2059,7 +2232,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      if (trim(job_name).eq. 'JmultT') then
          ! only regroup after the ADJ calculation
          ! avoid the extra overheads
-         call Master_job_Regroup(nTx,nPol_MPI,comm)
+         !call Master_job_Regroup(nTx,nPol_MPI,comm)
      endif
 
      if (trim(job_name) .eq. 'PQMULTT') then
@@ -2080,6 +2253,54 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
      !call deall(e0)
 
 end subroutine Master_job_Distribute_Taskes
+
+subroutine Master_job_assign_group(tasks_on_job, group_id)
+
+    implicit none
+
+    integer, intent(in), dimension(:) ::tasks_on_job
+    integer, intent(in) :: group_id
+
+    integer, allocatable, dimension(:) :: tasks_list
+    integer :: iWorkers
+
+    ! With the workers I need to communicate what iTx they will work on,
+    ! and if they will be the main task or a worker task
+    worker_job_task%what_to_do = 'ASSIGN GROUP'
+    worker_job_task%per_index = group_id
+
+    allocate(tasks_list(count(tasks_on_job /= -1)))
+
+    do iWorkers = 1, size(tasks_on_job)
+        if (tasks_on_job(iWorkers) /= -1) then
+            tasks_list(iWorkers) = tasks_on_job(iWorkers)
+        end if
+    end do
+
+    write(0,*) 'Size of task_list: ', size(tasks_list)
+
+    do iWorkers = 1, size(tasks_on_job)
+        if (tasks_on_job(iWorkers) == -1) then
+            cycle
+        end if
+
+        who = tasks_on_job(iWorkers)
+
+        write(0,*) "Sending ASSIGN GROUP to node ", who, " with group_id ", group_id
+        call create_worker_job_task_place_holder
+        worker_job_task%what_to_do = 'ASSIGN GROUP'
+        worker_job_task%per_index = group_id
+        call Pack_worker_job_task
+        call MPI_send(worker_job_package,Nbytes, MPI_PACKED, who, FROM_MASTER, COMM_WORLD, ierr)
+
+        ! Send the number of tasks
+        write(0,*) 'Sending number of tasks: ', size(tasks_list), ' to node ', who
+        call MPI_send(size(tasks_list), 1, MPI_INTEGER, who, FROM_MASTER, COMM_WORLD, ierr)
+        call MPI_send(tasks_list(1), size(tasks_list), MPI_INTEGER, who, FROM_MASTER, COMM_WORLD, ierr)
+    end do
+
+
+end subroutine Master_job_assign_group
 
 
 !##################   find next job -- from back or front   ##################
@@ -2182,16 +2403,17 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
 #ifdef PETSC
          call fwdSolve(per_index,e0,b0,device_id,comm_local)
 #elif defined(FG)
-         call fwdSolve(per_index,e0,b0,device_id,comm_local)
-#else
-         if (rank_local.eq.0) then
-             call fwdSolve(per_index,e0,b0,device_id)
-         else
-             write(6,'(a12,a18)') node_info, ' hanging around...'
-             write(6,*) ' WARNING: more than enough CPU(s) detected'
-             write(6,*) ' Please consider recompiling with PETSC or FG'
-         endif
 #endif
+        write(0,*) taskid, ' - Solving forward problem... local rank:', rank_local
+        call fwdSolve(per_index,e0,b0,device_id,comm_local)
+        write(0,*) taskid, ' - DONE forward problem... local rank:', rank_local
+     !    if (rank_local.eq.0) then
+     !        call fwdSolve(per_index,e0,b0,device_id)
+     !    else
+     !        write(6,'(a12,a18)') node_info, ' hanging around...'
+     !        write(6,*) ' WARNING: more than enough CPU(s) detected'
+     !        write(6,*) ' Please consider recompiling with PETSC or FG'
+     !    endif
      end if
 
      call ModEM_timers_stop('worker_forward', accumulate=.false.)
@@ -2206,20 +2428,24 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
          worker_job_task%taskid=rank_current
          worker_job_task%job_time_secs = timer % total_secs
          call Pack_worker_job_task
+         write(0,*) taskid, ' - Sending worker job task back to master...'
          call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
-    &                FROM_WORKER, comm_current, ierr)
+    &                FROM_WORKER, MPI_COMM_WORLD, ierr)
          
          which_pol=1
          call create_e_param_place_holder(e0)
          call Pack_e_para_vec(e0)
          call MPI_SEND(e_para_vec, Nbytes, MPI_PACKED, 0, &
-    &                FROM_WORKER, comm_current, ierr)
+    &                FROM_WORKER, MPI_COMM_WORLD, ierr)
      end if
      
      call reset_e_soln(e0)
      now = MPI_Wtime()
      time_passed = now - previous_time
      previous_time = now
+
+
+
 end subroutine worker_forward
 
 !-----------------------------------------------------------------------------
@@ -2862,6 +3088,94 @@ subroutine worker_regroup(comm_current, time_passed)
      endif
 end subroutine worker_regroup
 
+subroutine worker_abandon_group(comm_current, comm_local, comm_global, rank_current, rank_local, rank_global, size_global, comm_leader)
+
+    implicit none
+
+    integer, intent(inout) :: comm_current
+    integer, intent(inout) :: comm_local
+    integer, intent(inout) :: comm_global
+    integer, intent(inout) :: rank_current
+    integer, intent(inout) :: rank_local
+    integer, intent(inout) :: rank_global
+    integer, intent(inout) :: size_global
+    integer, intent(inout) :: comm_leader
+
+    integer :: i
+
+    write(0,*) rank_local, ' Worker is abandoning group' 
+
+    if (rank_local .eq. 0) then
+        do i = 1, size_local - 1
+            worker_job_task%what_to_do = 'ABANDON GROUP'
+            call create_worker_job_task_place_holder
+            call Pack_worker_job_task
+            write(0,*) rank_current, 'Sending abandon group task to worker: ', i
+            call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED, i, &
+                        FROM_MASTER, comm_local, ierr)
+            write(0,*) rank_current, 'Abandon group task sent to worker: ', i
+        end do
+        write(0,*) rank_current, 'I am a leader and I am abandoning my group'
+
+        write(0,*) rank_current, 'leader Freeing local communicator', comm_current, comm_local, comm_leader
+        call MPI_Comm_free(comm_local, ierr)
+    else
+        write(0,*) rank_current, 'I am a follower and I am abandoning my group', rank_global
+        write(0,*) rank_current, 'follower Freeing local communicator', comm_current, comm_local, comm_leader
+        call MPI_Comm_free(comm_current, ierr)
+    endif
+
+    ! Everyone frees their communicators
+    comm_current = comm_global
+    call MPI_Comm_rank(comm_global, rank_current, ierr)
+    call MPI_Comm_rank(comm_global, rank_local, ierr)
+    call MPI_Comm_size(comm_global, size_local, ierr)
+    call MPI_Comm_rank(comm_global, rank_global, ierr)
+    call MPI_Comm_size(comm_global, size_global, ierr)
+
+    para_method = 0
+
+    write(0,*) rank_current, 'I AM FREE!'
+
+end subroutine worker_abandon_group
+
+subroutine worker_assign_group(comm_current)
+
+    implicit none
+
+    integer, intent(inout) :: comm_current
+    integer :: group_id
+    integer :: nTasks
+    integer, dimension(:), allocatable :: tasks_list
+
+    integer :: world_group
+    integer :: group_current
+
+    call MPI_Comm_group(MPI_COMM_WORLD, world_group, ierr)
+
+    group_id = worker_job_task % per_index
+
+    write(0,*) taskid, " I have been assigned group ", group_id
+
+    call MPI_recv(nTasks, 1, MPI_INTEGER, 0, FROM_MASTER, MPI_COMM_WORLD, STATUS, ierr)
+    allocate(tasks_list(nTasks))
+    call MPI_recv(tasks_list(1), nTasks, MPI_INTEGER, 0, FROM_MASTER, MPI_COMM_WORLD, STATUS, ierr)
+    write(0,*) taskid, ' Received tasks list of size ', nTasks, ' for group ', group_id, ': ', tasks_list
+    
+    call MPI_group_incl(world_group, nTasks, tasks_list, group_current, ierr)
+
+    write(0,*) "Creating a new communicator for group ", group_id, taskid
+    call MPI_Comm_create_group(MPI_COMM_WORLD, group_current, group_id, comm_current, ierr)
+    call MPI_Group_free(group_current, ierr)
+
+    para_method = 2
+    call MPI_COMM_RANK(comm_current, rank_local, ierr)
+    call MPI_COMM_SIZE(comm_current, size_local, ierr)
+    comm_local = comm_current
+    comm_leader = MPI_COMM_WORLD
+
+end subroutine worker_assign_group
+
 !-----------------------------------------------------------------------------
 subroutine worker_stop(comm_current)
 ! Handle 'STOP' task - cleanup and exit
@@ -2965,6 +3279,7 @@ Subroutine Worker_job(sigma,d)
      type(modelParam_t), pointer            :: Qreal(:),Qimag(:)
      logical                                :: Qzero
      type(orient_t)               :: orient
+     logical :: in_a_group
  
      ! 2019.05.08, Liu Zhongyin, add isite for rx in dataBlock_t
      integer                       :: isite
@@ -2982,10 +3297,14 @@ Subroutine Worker_job(sigma,d)
      previous_message=''
      write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
+     in_a_group = .false.
+
      do  ! the major loop
          recv_loop=recv_loop+1
          ! prepare the job info structure 
          call create_worker_job_task_place_holder
+
+         write(0,*) taskid, ' - My rank local is now: ', rank_local
          ! firstly need to know who pays the check for you... 
          if (para_method .eq. 0) then
              ! override - everyone reports back to master
@@ -3069,7 +3388,18 @@ Subroutine Worker_job(sigma,d)
             case ('Clean memory')
                 call worker_clean_memory(comm_current)
             case ('REGROUP')
-                call worker_regroup(comm_current, time_passed)
+                !call worker_regroup(comm_current, time_passed)
+            case ('ABANDON GROUP')
+                ! Free the local communicator before abandoning the group
+                if (in_a_group) then
+                    call worker_abandon_group(comm_current, comm_local, comm_world, &
+                        rank_current, rank_local, rank_world, size_world, comm_leader)
+                end if
+                in_a_group = .false.
+            case ('ASSIGN GROUP')
+                 call worker_assign_group(comm_current)
+                 in_a_group = .true.
+                 write(0,*) taskid,'Assigned to new group - ', comm_current, comm_local, comm_leader, MPI_COMM_WORLD
             case ('STOP')
                 call worker_stop(comm_current)
                 exit

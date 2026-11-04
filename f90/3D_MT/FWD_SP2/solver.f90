@@ -12,11 +12,9 @@ module solver
    use math_constants   ! math/ physics constants
    use utilities 
    use spoptools        ! for sparse-matrix operations
-#if defined(FG) 
    use mpi
 #if (defined(CUDA) || defined(HIP))
    use Declaration_MPI, only: comm_nccl
-#endif
 #endif
 #if defined(CUDA)
    use cudaFortMap      ! cuda GPU api bindings for fortran
@@ -44,7 +42,7 @@ module solver
   end type solverControl_t
 ! currently only BiCG is supported for FG and GPU versions
   interface BICG
-#if defined(FG)
+#if defined(MPI)
       module procedure BiCG
       module procedure BiCGfg
 #if defined(CUDA) || defined (HIP)
@@ -934,7 +932,6 @@ subroutine BiCG(b,x,KSPiter,adjt)
   deallocate(T)
 end subroutine BiCG ! BICG
   
-#if defined(FG) 
 ! *****************************************************************************
 subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
   ! fine-grained parallel version 
@@ -1224,7 +1221,6 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
   deallocate(isizes)
   deallocate(displs)
 end subroutine BiCGfg ! BICGp
-#endif
 
 ! *****************************************************************************
 #if defined(CUDA) || defined(HIP)

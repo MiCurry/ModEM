@@ -20,12 +20,10 @@ module EMsolve3D
   public        :: createSolverDiag, getEMsolveDiag, setEMsolveControl
   private       :: SdivCorr
 
-#ifdef FG
   interface FWDSolve3D
      MODULE PROCEDURE FWDSolve3D
      MODULE PROCEDURE FWDSolve3Dfg
   end interface
-#endif
 
   type :: emsolve_control
     ! Values of solver control parameters, e.g., read in from file
@@ -553,7 +551,7 @@ Contains
 
   end subroutine FWDsolve3D
 
-#if defined(MPI) && defined(FG)
+#if defined(MPI)
   ! fine-grained parallel version
   subroutine FWDsolve3Dfg(bRHS,omega,eSol,device_id,comm_local)
 !----------------------------------------------------------------------
@@ -1089,6 +1087,8 @@ Contains
 !     iteration starts
 !------------------------------------------------------------------------------
      loop: do while ((.not.converged).and.(.not.failed))
+
+         write(0,*) rank_local, ' - Starting iteration loop ...'
          ! fine-grained parallel version 
 #if defined(CUDA) || defined(HIP)
          if ((device_id.ge.0) .and. (size_local .gt. 1)) then
@@ -1198,7 +1198,7 @@ Contains
          endif
          call setVector(e,eSol)
      else !while others sit back and watch 
-         if (output_level > 3) then
+         if (output_level > 1) then
              write(*,'(a36,i8,a4,i8)') 'Waiting for Leader to finish: rank#', &
    &             rank_local
          end if

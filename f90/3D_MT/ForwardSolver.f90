@@ -884,10 +884,10 @@ end subroutine unpack_BC_from_file
 #ifdef MPI
          else
             if (present(comm_local)) then
-#ifdef FG
+                  write(0,*) "Calling FWDSolve3D with device_id and comm_local"
                  call FWDSolve3D(b0%b(iMode),omega,e0%pol(iMode), device_id, comm_local)
-#endif 
             else
+                 write(0,*) "here 2"
                  call FWDSolve3D(b0%b(iMode),omega,e0%pol(iMode), device_id)
             endif
 #endif
