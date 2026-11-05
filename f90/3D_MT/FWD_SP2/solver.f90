@@ -987,6 +987,7 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
   ! buffer 
   real    (kind=prec)                           :: bnrm
   complex (kind=prec)                           :: bdot
+
  
   if (present(adjt)) then
       adjoint = adjt
@@ -998,6 +999,9 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
   ! now see how many workers do we have
   call MPI_COMM_RANK(comm_local,rank_local,ierr)
   call MPI_COMM_SIZE(comm_local,size_local,ierr)
+
+  write(0,*) 'Starting BICG solver - Rank Local: ', rank_local, size_local
+
   ! firstly try to figure out how the data is distributed on 
   ! each process
   allocate(isizes(size_local))
@@ -1183,7 +1187,7 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
       ! wait for the others
       call MPI_BARRIER(comm_local, ierr)
       KSPiter%rerr(iter) = real(rnorm / bnorm)
-      ! write(6,*) 'iteration # ', iter ,' relres= ', KSPiter%rerr(iter)
+       write(0,*) 'iteration # ', iter ,' relres= ', KSPiter%rerr(iter)
       if (rnorm.lt.btol) then
           KSPiter%failed = .false.
           KSPiter%niter = iter

@@ -76,7 +76,7 @@ module EMsolve3D
   !Solver name, by default we use BICG
   character (len=10)  		   ::   solver_name="BICG"
   character (len=50) , public      ::   get_1D_from="Geometric_mean"
-
+    
 
   save
 
@@ -167,6 +167,7 @@ Contains
     type (cvector)              :: tvec
     !  diagnostic structure for Krylov Subspace Solvers(KSS)
     type (solverControl_t)      :: KSSiter
+    write(0,*) 'Starting normal EmSolve3D :) - no FG'
     !  initialize solver diagnostic variables
     nIterTotal = 0
     nDivCor = 0
@@ -619,6 +620,9 @@ Contains
      ! now see how many workers do we have
      call MPI_COMM_RANK(comm_local,rank_local,ierr)
      call MPI_COMM_SIZE(comm_local,size_local,ierr)
+
+     write(0,*) 'Starting EMsolve3Dfg :) - FG - Rank Local: ', rank_local, size_local
+
      !------------------------------------------------------------------------
      !     check the input variables
      !------------------------------------------------------------------------
