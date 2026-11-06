@@ -22,6 +22,9 @@ module Main_MPI
   use EsolnManager
   use ModEM_timers
   use ModEM_profiler
+  use ModEM_priority_queue
+
+
   ! use ioascii
 
   implicit none
@@ -722,6 +725,8 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
     logical :: flag, more_to_send
     integer :: nWorkers
 
+    type (priority_queue), pointer :: pque
+
     sending = .true.
     task_is_working(:) = .false.
     transmitters_processing(:,:) = .false.
@@ -732,6 +737,7 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
     write(0,*) 'Number of workers: ', number_of_workers
     worker_assignment(:,:) = -1
 
+    pque => ModEM_pque_new_queue(trim(label))
 
     more_to_send = .true.
     do while (sending)
@@ -808,6 +814,10 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
             end if
         end if
 
+
+        !
+        ! Receiving..
+        !
         call MPI_Iprobe(MPI_ANY_SOURCE, FROM_WORKER, MPI_COMM_WORLD, flag, STATUS, ierr)
         if (flag) then ! Someone is sending us a message
             write(0,*) 'Receiving worker job task from any source'
@@ -817,6 +827,9 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
             who = worker_job_task % taskid
             which_per = worker_job_task % per_index
             pol_index = worker_job_task % pol_index
+
+            ! Record the time  it took for this period
+            call ModEM_profiler_record(which_per, which_pol, worker_job_task % job_time_secs)
 
             transmitters_done(which_per, pol_index) = .true.
 
@@ -843,16 +856,31 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
                 end if
             end do
         end if
-
-        ! 
-        ! Recievers...
-        !
     end do
 
 
     write(0,*) "We are done with smart distribution!"
 end subroutine Master_job_smart_distribute
 
+
+subroutine send_message(message, to)
+    ! Routine for packing and unpacking messages.
+    ! Just pass me the message you want to send and I'll send it!
+
+    implicit none
+
+    type (define_worker_job), intent(in) :: message
+    integer, intent(in) :: to
+
+end subroutine send_message
+
+subroutine recv_message(message)
+
+    implicit none
+
+    type (define_worker_job), intent(in) :: message
+
+end subroutine recv_message
 
 !----------------------------------------------------------------------------
 !##########################  Master_job_DataResp ############################

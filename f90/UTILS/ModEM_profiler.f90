@@ -5,7 +5,9 @@ module ModEM_profiler
 
     implicit none
 
-    type tx_profile
+    type tx_profile_t
+        ! A Tx profile contains recorded times for a given tx and pol
+        ! as well as the averages of those records
         integer :: iTx
         integer :: iPol
         integer :: count = 0
@@ -14,350 +16,202 @@ module ModEM_profiler
         real(kind=real64) :: average = 0
 
         type(tx_record), pointer :: record => null()
-    end type tx_profile
+    end type tx_profile_t
 
     type tx_record
+        ! A tx record is just a time record
         integer(kind=int64) :: secs
         type(tx_record), pointer :: next => null()
     end type tx_record
 
-    type(tx_profile), pointer :: tx_profiles(:,:) => null()
+    type profile_t
+        ! A profile is a collection of tx_profiles
+        ! For instance, we might want a profile for fwd, JmultT, Jmult etc.
+        character (len=256) :: name
+        integer :: nTx
+        integer :: nPol
 
-    type priority_queue
-        integer :: size = 0
-        type(node), pointer :: heap => null()
-    end type priority_queue
+        type(tx_profile_t), pointer, dimension(:,:) :: tx_profiles => null()
+        type(profile_t), pointer :: next => null()
+    end type profile_t
 
-    type node
-        integer ::  iTx   
-        integer ::  iPol 
-        integer :: weight
-        integer :: scaled_weight
-
-
-        type(node), pointer :: prev => null()
-        type(node), pointer :: next => null()
-    end type node
-
-    type (priority_queue) :: que 
+    type (profile_t) :: profiles
 
 contains
 
-subroutine ModEM_profiler_init(nTxs, nPol)
+function ModEM_profiler_exists(profiler_name) result(exists)
 
     implicit none
 
+    character (len=*), intent(in) :: profiler_name
+
+    logical :: exists
+
+    type (profile_t), pointer :: cur
+
+    exists = .false.
+    cur => profiles % next
+    do while(associated(cur))
+        if (trim(profiler_name) == trim(cur % name)) then
+            exists = .true.
+            exit
+        end if
+        cur => cur % next 
+    end do
+
+end function ModEM_profiler_exists
+
+subroutine ModEM_profiler_print_profiles()
+
+    implicit none
+
+    type (profile_t), pointer :: cur
+
+    cur => profiles % next
+    do while(associated(cur))
+        write(0,*) 'Profile: ', trim(cur % name), ' nTx: ', cur % nTx, ' nPol: ', cur % nPol
+        cur => cur % next
+    end do
+
+end subroutine ModEM_profiler_print_profiles
+
+subroutine ModEM_profiler_print(profile_name, itx, ipol)
+
+    implicit none
+
+    character (len=*), intent(in) :: profile_name
+    integer, intent(in) :: itx
+    integer, intent(in) :: ipol
+
+    type (profile_t), pointer :: profile
+    type (tx_profile_t), pointer :: tx_profile
+    type (tx_record), pointer :: cur
+
+
+    profile => ModEM_profiler_get(profile_name)
+
+    write(0,*) 'Printing tx_profile for iTx: ', itx, ' iPol:', ipol, ' from profile_name: ', trim(profile_name)
+
+    tx_profile => profile % tx_profiles(itx, ipol)
+    cur => tx_profile % record
+    do while (associated(cur)) 
+        write(0,*) ' secs: ', cur % secs
+        cur => cur % next
+    end do
+
+end subroutine ModEM_profiler_print
+
+function ModEM_profiler_get(profile_name) result(profile)
+
+    implicit none
+
+    character (len=*), intent(in) :: profile_name
+
+
+    type (profile_t), pointer :: profile
+    type (profile_t), pointer :: cur
+
+    if (.not. ModEM_profiler_exists(profile_name)) then
+        call errStop("Profiler of name '" // trim(profile_name) // "' does not exist.")
+    end if
+
+    profile => null()
+    cur => profiles % next
+    do while (associated(cur))
+        if (trim(profile_name) == trim(cur % name)) then
+            profile => cur
+            exit
+        end if
+
+        cur => cur % next
+    end do
+
+end function ModEM_profiler_get
+
+
+subroutine ModEM_profiler_new_profile(profile_name, nTxs, nPol)
+
+    implicit none
+
+    character (len=*), intent(in) :: profile_name
     integer, intent(in) :: nTxs, nPol
     integer :: iTx, iPol
 
-    allocate(tx_profiles(nTxs, nPol))
+    type (profile_t), pointer :: profile
 
-    do iTx = 1, nTxs
-        do iPol = 1, nPol
-            tx_profiles(iTx, iPol)%iTx = iTx
-            tx_profiles(iTx, iPol)%iPol = iPol
-            tx_profiles(iTx, iPol)%record => null()
+    if (ModEM_profiler_exists(profile_name)) then
+        call errStop("A profiler already exists with the name: '" // trim(profile_name) // "'")
+    end if
+
+    allocate(profile)
+    profile % name = trim(profile_name)
+    profile % nTx = nTxs
+    profile % nPol = nPol
+    allocate(profile % tx_profiles(nTxs, nPol))
+
+    do iTx = 1, profile % nTx
+        do iPol = 1, profile % nPol
+            profile % tx_profiles(iTx, iPol)%iTx = iTx
+            profile % tx_profiles(iTx, iPol)%iPol = iPol
+            profile % tx_profiles(iTx, iPol)%record => null()
         end do
     end do
 
-end subroutine ModEM_profiler_init
+    ! Prepend it to the first
+    profile % next => profiles % next
+    profiles % next => profile
 
-subroutine ModEM_profiler_record(iTx, iPol, secs)
+end subroutine ModEM_profiler_new_profile
+
+subroutine ModEM_profiler_record(profile_name, iTx, iPol, secs)
 
     implicit none
 
+    character (len=*), intent(in) :: profile_name
     integer, intent(in) :: iTx
     integer, intent(in) :: iPol
     integer(kind=int64), intent(in) :: secs
 
+    type (profile_t), pointer :: profile => null()
     type(tx_record), pointer :: new_record
+
+    profile => ModEM_profiler_get(profile_name)
 
     allocate(new_record)
     new_record%secs = secs
     new_record%next => null()
 
-    write(0,*) 'Recording time for iTx=', iTx, ' iPol=', iPol, ' secs=', secs
-
-    if (.not. associated(tx_profiles(iTx, iPol)%record)) then
-        tx_profiles(iTx, iPol)%record => new_record
+    if (.not. associated(profile % tx_profiles(iTx, iPol)%record)) then
+        profile % tx_profiles(iTx, iPol)%record => new_record
     else
-        new_record%next => tx_profiles(iTx, iPol)%record
-        tx_profiles(iTx, iPol)%record => new_record
+        new_record%next => profile % tx_profiles(iTx, iPol)%record
+        profile % tx_profiles(iTx, iPol)%record => new_record
     end if
 
-    tx_profiles(iTx, iPol)%total_time = tx_profiles(iTx, iPol) % total_time + secs
-    tx_profiles(iTx, iPol)%count = tx_profiles(iTx, iPol) % count + 1
+    profile % tx_profiles(iTx, iPol)%total_time = profile % tx_profiles(iTx, iPol) % total_time + secs
+    profile % tx_profiles(iTx, iPol)%count = profile % tx_profiles(iTx, iPol) % count + 1
 
     ! Recalculate average
-    tx_profiles(iTx, iPol)%average = real(tx_profiles(iTx, iPol)%total_time, kind=real64) / real(tx_profiles(iTx, iPol)%count, kind=real64)
-
-    call ModEM_pque_push(iTx, iPol, tx_profiles(iTx, iPol)%average)
+    profile % tx_profiles(iTx, iPol)%average = real(profile % tx_profiles(iTx, iPol)%total_time, kind=real64) &
+                        / real(profile % tx_profiles(iTx, iPol)%count, kind=real64)
 
 end subroutine ModEM_profiler_record
 
-subroutine ModEM_profiler_get_slowest_txs()
+function ModEM_profiler_get_average(profile_name, iTx, ipol) result(average_secs)
 
     implicit none
 
-    integer :: iTx, iPol
-    integer :: slowest_iTx, slowest_iPol
-    real(kind=real64) :: max_average
-    real(kind=real64), dimension(:), allocatable :: averages
-    integer, dimension(:), allocatable :: idx
-    integer :: itx_cnt
-    integer :: tx, pol
-
-    max_average = -1.0
-    slowest_iTx = -1
-    
-    slowest_iPol = -1  
-    
-    write(0,*) 'Tx Profiels size:', size(tx_profiles, 1), size(tx_profiles, 2), shape(tx_profiles)
-
-    allocate(idx(size(tx_profiles, 1) * size(tx_profiles, 2)))
-    idx(:) = -1
-    allocate(averages(size(tx_profiles, 1) * size(tx_profiles, 2)))
-    averages(:) = -1.0
-
-    itx_cnt = 1
-
-    do iTx = 1, size(tx_profiles, 1)
-        do iPol = 1, size(tx_profiles, 2)
-            if (iPol == 1) then
-                idx(itx_cnt) = iTx_cnt
-            else
-                idx(itx_cnt) = iTx_cnt * 2
-            end if
-
-            averages(itx_cnt) = tx_profiles(iTx, iPol)%average
-
-            if (tx_profiles(iTx, iPol)%average > max_average) then
-                max_average = tx_profiles(iTx, iPol)%average
-                slowest_iTx = iTx
-                slowest_iPol = iPol
-            end if
-
-            call ModEM_pque_push(iTx_cnt, iPol, tx_profiles(iTx, iPol)%average)
-
-            itx_cnt = itx_cnt + 1
-        end do
-    end do
-
-    itx_cnt = 1
-    do iTx = 1, size(averages, 1)
-        if (mod(idx(iTx), 2) == 0) then
-            tx = (idx(iTx) + 1) / 2
-            pol = 2
-        else
-            tx = idx(iTx)
-            pol = 1
-        end if
-    end do
-
-    deallocate(idx)
-    deallocate(averages)
-
-    write(0,*) 'Slowest average time: ', max_average, 'For iTx', slowest_iTx, 'iPol', slowest_iPol
-
-end subroutine ModEM_profiler_get_slowest_txs
-
-
-subroutine ModEM_pque_push(iTx, iPol, weight)
-
-    implicit none
-
+    character (len=*), intent(in) :: profile_name
     integer, intent(in) :: iTx
-    integer, intent(in) :: iPol
-    real(kind=real64), intent(in) :: weight
+    integer, intent(in) :: ipol
 
-    type(node), pointer :: entry
-    type(node), pointer :: cur
+    real (kind=int64) :: average_secs
 
-    allocate(entry)
+    type (profile_t), pointer :: profile
 
-    entry%iTx = iTx
-    entry%iPol = iPol
-    entry%weight = weight
+    profile => ModEM_profiler_get(profile_name)
+    average_secs = profile % tx_profiles(iTx, iPol) % average
 
-    ! First node
-    if (.not. associated(que % heap)) then
-        que % heap => entry
-        entry % prev => null()
-        entry % next => null()
-        return
-    end if
+end function ModEM_profiler_get_average
 
-    write(0,*) 'Entry is: iTx=', iTx, ' iPol=', iPol, ' weight=', weight
-
-    cur => que % heap
-    do while (associated(cur))
-        ! Insert entry before cur if its weight is greater than cur's weight
-        if (cur % weight < entry % weight) then
-            entry % next => cur
-            entry % prev => cur % prev
-
-            write(0,*) 'Inserting entry before cur: iTx=', cur % iTx, ' iPol=', cur % iPol, ' weight=', cur % weight
-
-            if (associated(cur % prev)) then
-                cur % prev % next => entry
-            else
-                que % heap => entry
-                entry % prev => null()
-                entry % next => cur
-            end if
-
-            cur % prev => entry
-            return
-        end if
-
-        cur => cur % next
-    end do
-
-end subroutine ModEM_pque_push
-
-subroutine ModEM_pque_peek(iTx, iPol, weight, scaled_weight)
-
-    implicit none
-
-    integer, intent(out) :: iTx
-    integer, intent(out) :: iPol
-    real(kind=real64), intent(out) :: weight
-    integer, intent(out) :: scaled_weight
-
-    type(node), pointer :: entry
-
-    if (.not. associated(que % heap)) then
-        call errStop('Priority queue is empty')
-    end if
-
-    entry => que % heap
-    iTx = entry % iTx
-    iPol = entry % iPol
-    weight = entry % weight
-    scaled_weight = entry % scaled_weight
-
-end subroutine ModEM_pque_peek
-
-
-subroutine ModEM_pque_pop(iTx, iPol, weight, scaled_weight)
-
-    implicit none
-
-    integer, intent(out) :: iTx
-    integer, intent(out) :: iPol
-    real(kind=real64), intent(out) :: weight
-    integer, intent(out) :: scaled_weight
-
-    type (node), pointer :: entry
-
-    if (.not. associated(que % heap)) then
-        call errStop('Priority queue is empty')
-    end if
-
-    entry => que % heap
-    iTx = entry % iTx
-    iPol = entry % iPol
-    weight = entry % weight
-    scaled_weight = entry % scaled_weight
-
-    que % heap => entry % next
-    if (associated(que % heap)) then
-        que % heap % prev => null()
-    end if
-
-    deallocate(entry)
-
-end subroutine ModEM_pque_pop
-
-function ModEM_pque_is_empty() result(is_empty)
-
-    implicit none
-
-    logical :: is_empty
-
-    is_empty = .not. associated(que % heap)
-
-end function ModEM_pque_is_empty
-
-subroutine ModEM_pque_rescale_weights(total_mpi_tasks)
-
-    implicit none
-
-    integer, intent(in) :: total_mpi_tasks
-
-    type(node), pointer :: cur
-    integer :: tasks_remaining
-    integer :: ideal_ranks
-    integer :: actual_ranks
-    real(kind=real64) :: max_weight, fraction
-
-    if (.not. associated(que % heap)) then
-        return
-    end if
-
-    cur => que % heap
-    do while (associated(cur))
-        cur % scaled_weight = 0
-        cur => cur % next
-    end do
-
-    tasks_remaining = total_mpi_tasks
-
-    max_weight = que % heap % weight
-
-    if (max_weight <= 0) then 
-        max_weight = 1.0_real64
-    end if
-    
-
-    cur => que % heap
-    do while (associated(cur))
-
-        fraction = cur % weight / max_weight
-
-        if (fraction == 1.0) then
-            cur % scaled_weight = min(total_mpi_tasks, 3)
-        else if (fraction >= 0.85) then
-            cur % scaled_weight = min(total_mpi_tasks, 2)
-        else if (fraction >= 0.75) then
-            cur % scaled_weight = min(total_mpi_tasks, 2)
-        else if (fraction >= 0.5) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else if (fraction >= 0.25) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else if (fraction >= 0.25) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        end if
-
-        write(0,*) 'cur % iTx=', cur % iTx, ' iPol=', cur % iPol, ' weight=', cur % weight, ' fraction=', fraction, ' scaled_weight=', cur % scaled_weight
-
-        cur => cur % next
-    end do
-
-
-end subroutine ModEM_pque_rescale_weights
-
-subroutine ModEM_pque_print()
-
-    implicit none
-
-    type(node), pointer :: cur
-
-    if (.not. associated(que % heap)) then
-        write(0,*) 'Priority queue is empty'
-        return
-    end if
-
-
-    write(0,*) 'Printing priority queue:'
-    cur => que % heap
-    do while (associated(cur))
-        write(0,*) 'iTx:', cur % iTx, 'iPol:', cur % iPol, 'weight:', cur % weight, 'scaled: ', cur % scaled_weight
-        cur => cur % next
-    end do
-
-end subroutine ModEM_pque_print
-    
 end module ModEM_profiler
