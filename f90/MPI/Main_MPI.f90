@@ -15,10 +15,8 @@ module Main_MPI
   use SolverSens
   use ForwardSolver
   use SensComp
-
   use Declaration_MPI
   use Sub_MPI
-
   use EsolnManager
   use ModEM_timers
   use ModEM_profiler
@@ -677,13 +675,18 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm,label)
      end if
 
      job_name= 'FORWARD'
-     if (do_normal_forward) then
-        call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
-        do_normal_forward = .false.
-     else
-        call Master_job_smart_distribute(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
-        do_normal_forward = .true.
-     end if
+
+     ! ALways do smart dis
+
+     call Master_job_smart_distribute(job_name, nTx, sigma, eAll, comm_current, label=label_lcl)
+    ! call Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
+
+   !  if (do_normal_forward) then
+   !     do_normal_forward = .false.
+   !  else
+   !     call Master_job_smart_distribute(job_name,nTx,sigma,eAll,comm_current, label=label_lcl)
+   !     do_normal_forward = .true.
+   !  end if
 
      ! Calculate Data Response
      call Master_job_DataResp(nTx, sigma, eAll, d1, label=label_lcl)
@@ -694,13 +697,11 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm,label)
      write(ioMPI,*)'FWD: TIME REQUIERED: ',time_used ,'s'
      call deall (e0)
 
-     write(0,*) 'Printing priority queue:'
-     call ModEM_pque_print()
-     call ModEM_pque_rescale_weights(number_of_workers)
-
 end subroutine Master_job_fwdPred
 
 subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, label)
+
+    use iso_fortran_env, only: real32, real64, real32
 
     implicit none
 
@@ -722,68 +723,104 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
     integer, dimension(number_of_workers) :: tasks_on_job
     integer, dimension(number_of_workers, 2) :: worker_assignment
     integer :: which_per, pol_index
-    logical :: flag, more_to_send
+    logical :: flag, more_to_send, start_reciving
     integer :: nWorkers
-
-    type (priority_queue), pointer :: pque
 
     sending = .true.
     task_is_working(:) = .false.
     transmitters_processing(:,:) = .false.
     transmitters_done(:,:) = .false.
 
-    write(0,*) " WE ARE BACK IN SMART DISTRIBUTE!"
-
-    write(0,*) 'Number of workers: ', number_of_workers
     worker_assignment(:,:) = -1
 
-    pque => ModEM_pque_new_queue(trim(label))
+    ! See if we have a profiler and a priroity que for this job name
+
+    write(0,*) 'Master_job_smart_distribute - start'
+
+    if (.not. ModEM_profiler_exists(trim(job_name))) then
+        call ModEM_profiler_new_profile(job_name, nTx, 2)
+    end if
+
+    write(0,*) 'Master_job_smart_distribute - 1'
+
+    if (.not. ModEM_pque_exists(trim(job_name))) then
+        call ModEM_pque_init(job_name)
+    end if
+
+    write(0,*) 'Master_job_smart_distribute - 2'
+
+    ! If the priority queue is empty, then initialize it with all transmitters and their weights
+    if (ModEM_pque_is_empty(job_name)) then
+        do iTx = 1, nTx
+            do iPol = 1, 2
+                call ModEM_pque_push(job_name, iTx, iPol, 1.0, 1)
+            end do
+        end do
+    end if
+
+
+    write(0,*) 'Master_job_smart_distribute - 3'
+
+    tasks_on_job(:) = -1
+    start_reciving = .true.
 
     more_to_send = .true.
     do while (sending)
 
         ! Get the largest weighted transmitter
-        if (ModEM_pque_is_empty()) then
-            write(0,*) 'Priority queue is empty, stopping sending tasks'
+        if (ModEM_pque_is_empty(job_name)) then
             more_to_send = .false.
         end if
 
-        if (ModEM_pque_is_empty() .and. .not. more_to_send) then
+        if (ModEM_pque_is_empty(job_name) .and. all(task_is_working(:) .eqv. .false.)) then
             sending = .false.
             cycle
         end if
-        call ModEM_pque_peek(iTx, iPol, weight, scaled_weight)
 
-        ! Start Tasks - Start with the biggest task first if we have enough CPUs
+        ! Peek at the top of the priority queue, mainly to see if the we have
+        ! scaled_weight number of tasks open
+        if (more_to_send) then
+            call ModEM_pque_peek(job_name, iTx, iPol, weight, scaled_weight)
+        end if
+
+        ! See if we have enough available tasks to handle this transmitter
+        tasks_on_job(:) = -1
         if (count(task_is_working(:) .eqv. .false.) >= scaled_weight .and. more_to_send) then
-            ! Mark the transmitter as being processed
 
-            call ModEM_pque_pop(iTx, iPol, weight, scaled_weight)
-            write(0,*) 'Popped transmitter ', iTx, ' pol ', iPol, ' with weight ', weight, ' and scaled weight ', scaled_weight
+            call ModEM_pque_pop(job_name, iTx, iPol, weight, scaled_weight)
+            write(0,*) trim(job_name), ' - Popped transmitter ', iTx, ' pol ', iPol, ' with weight ', weight, ' and scaled weight ', scaled_weight
 
-            call ModEM_pque_print()
+            call ModEM_pque_print(job_name)
             transmitters_processing(iTx, iPol) = .true.
 
             ! Pick scaled_wight MPI tasks to work on this transmitter
-            tasks_on_job(:) = -1
             nWorkers = 1
+            tasks_on_job(:) = -1
             do iWorkers = 1, number_of_workers
-                if (.not. task_is_working(iWorkers)) then
-                    task_is_working(nWorkers) = .true.
-                    tasks_on_job(nWorkers) = iWorkers
-                    worker_assignment(nWorkers, 1) = iTx
-                    worker_assignment(nWorkers, 2) = iPol
-                    nWorkers = nWorkers + 1
-                end if
-
-                if (count(tasks_on_job(:) /= 0) == scaled_weight) then
+                if (count(tasks_on_job(:) /= -1) == scaled_weight) then
+                    ! We have enough tasks
                     exit
                 end if
+
+                if (task_is_working(iWorkers) .eqv. .true.) then
+                    cycle
+                end if
+
+                task_is_working(iWorkers) = .true.
+                tasks_on_job(nWorkers) = iWorkers
+                worker_assignment(iWorkers, 1) = iTx
+                worker_assignment(iWorkers, 2) = iPol
+                nWorkers = nWorkers + 1
             end do
 
-            write(0,*) 'Tasks assigned for transmitter ', iTx, ' pol ', iPol, ': ', tasks_on_job(:)
 
-            ! Tell each assigned worker 
+            ! 
+            write(0,*)'--------------------------------------------------'
+            write(0,*) 'Tasks assigned for transmitter ', iTx, ' pol ', iPol, ': ', tasks_on_job(:)
+            write(0,*) "Tasks on job: ", tasks_on_job
+            write(0,*) 'worker assignment: ', worker_assignment
+            write(0,*)'--------------------------------------------------'
+
             if (count(tasks_on_job(:) /= -1) == 1) then
                 ! We just one one task
                 call create_worker_job_task_place_holder
@@ -795,7 +832,11 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
                 call Pack_worker_job_task
                 who = tasks_on_job(1)
                 call MPI_send(worker_job_package, Nbytes, MPI_PACKED, who, FROM_MASTER, MPI_COMM_WORLD, ierr)
-            else
+
+            end if
+
+            ! Tell the workers that they are now working as a group and send the leader its tasks
+            if (count(tasks_on_job(:) /= -1) > 1) then
                 group_id = ((iTx - 1) * 2) + iPol
                 write(0,*) "We have assigned tasks: ", tasks_on_job(:), 'for transmitter ', iTx, ' pol ', iPol, ' with weight ', scaled_weight, ' and group_id ', group_id
                 call Master_job_assign_group(tasks_on_job(:), group_id)
@@ -814,6 +855,9 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
             end if
         end if
 
+        if (all(tasks_on_job(:) == -1) .and. .not. start_reciving) then
+            start_reciving = .true.
+        end if
 
         !
         ! Receiving..
@@ -827,16 +871,19 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
             who = worker_job_task % taskid
             which_per = worker_job_task % per_index
             pol_index = worker_job_task % pol_index
+            which_pol = worker_job_task % pol_index
+
+
+            write(0,*) 'Received worker job :' , who, ' task for transmitter ', worker_job_task % per_index, ' pol ', worker_job_task % pol_index
 
             ! Record the time  it took for this period
-            call ModEM_profiler_record(which_per, which_pol, worker_job_task % job_time_secs)
+            call ModEM_profiler_record(job_name, worker_job_task % per_index, worker_job_task % pol_index, worker_job_task % job_time_secs)
 
             transmitters_done(which_per, pol_index) = .true.
 
-            write(0,*) 'Worker job task details: who=', who, ' which_per=', which_per, ' pol_index=', pol_index
-
             if (trim(job_name) == 'FORWARD' .or. trim(job_name) == 'JmultT'  & 
                 .or. trim(job_name) == 'Jmult') then
+                    write(0,*) "Calling EsMgr_get for transmitter ", which_per, " pol ", pol_index, ' from: ', who
                     call EsMgr_get(eAll_out % solns(which_per), which_per, pol_index=pol_index, from=who)
             end if
 
@@ -844,22 +891,47 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
             call create_worker_job_task_place_holder
             worker_job_task % what_to_do = trim('ABANDON GROUP')
             call Pack_worker_job_task
-            who = tasks_on_job(1)
             call MPI_send(worker_job_package, Nbytes, MPI_PACKED, who, FROM_MASTER, MPI_COMM_WORLD, ierr)
 
             ! Reclaim the workers that were on this task
             do iWorkers = 1, number_of_workers
+                
                 if (worker_assignment(iWorkers, 1) == which_per .and. worker_assignment(iWorkers, 2) == pol_index) then
+                    write(0,*) "Worker ", iWorkers, " is done!"
                     worker_assignment(iWorkers, 1) = -1
                     worker_assignment(iWorkers, 2) = -1
                     task_is_working(iWorkers) = .false.
                 end if
             end do
+
+            write(0,*) '================================================================================='
+            write(0,*) 'Finished processing worker job for transmitter ', which_per, ' pol ', pol_index
+            write(0,*) 'Current worker assignment: ', worker_assignment
+            write(0,*) 'Current task status: ', task_is_working
         end if
     end do
 
-
     write(0,*) "We are done with smart distribution!"
+    if (.not. ModEM_pque_is_empty(job_name)) then
+        call errStop("There are still tasks in the queue for job: "//trim(job_name))
+    end if
+
+    ! Now we have profile everything, we need 
+    do iTx = 1, nTx
+        do iPol = 1, 2 ! TODO: Change to npol
+            ! Profile each transmitter
+            call ModEM_pque_push(job_name, iTx, iPol, real(ModEM_profiler_get_average(job_name, iTx, iPol), kind=real32))
+        end do
+    end do  
+
+
+
+    call ModEM_pque_print(job_name)
+    write(0,*) "Rescaling weights for job: ", trim(job_name)
+    call ModEM_pque_rescale_weights(job_name, 3)
+    write(0,*) "After rescaling weights for job: ", trim(job_name)
+    call ModEM_pque_print(job_name)
+
 end subroutine Master_job_smart_distribute
 
 
@@ -2165,10 +2237,6 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
 
          write(0,*) 'Master Job Time: ', worker_job_task % job_time_secs, ' From: "', who, ' for: ', which_per, ' Pol: ', which_pol
 
-         if (trim(job_name) == "FORWARD") then
-            call ModEM_profiler_record(which_per, which_pol, worker_job_task % job_time_secs)
-         end if
-
          modem_ctx % comm_current = comm_current
 
          if (trim(job_name) == 'FORWARD' .or. trim(job_name) == 'JmultT'  & 
@@ -2265,7 +2333,7 @@ subroutine Master_job_Distribute_Taskes(job_name,nTx,sigma,eAll_out, &
 
      if (trim(job_name) .eq. 'PQMULTT') then
         ! Combine the dsigma_recv into dsigma...
-        do iTx = 1, nTx
+        do iTx = 2, nTx
             call linComb_modelParam(ONE, dsigma, ONE, dsigma_recv(iTx), dsigma)
             call deall_modelParam(dsigma_recv(iTx))
         end do

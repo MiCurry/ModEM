@@ -641,10 +641,13 @@ contains
         Ez_size=size(e%pol(1)%z)
         index=1
 
+        write(0,*) 'Inside int_unpack_packed_vec: Which pool: ', which_pol
+
         call MPI_Unpack(esmgr_holder, esmgr_holder_bytes, index, e%pol(which_pol)%x(1,1,1),Ex_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
         call MPI_Unpack(esmgr_holder, esmgr_holder_bytes, index, e%pol(which_pol)%y(1,1,1),Ey_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
         call MPI_Unpack(esmgr_holder, esmgr_holder_bytes, index, e%pol(which_pol)%z(1,1,1),Ez_size, MPI_DOUBLE_COMPLEX,MPI_COMM_WORLD, ierr)
         call MPI_Unpack(esmgr_holder, esmgr_holder_bytes, index, e%tx,1, MPI_INTEGER,MPI_COMM_WORLD, ierr)
+
     end subroutine int_unpack_packed_vec
     
 
