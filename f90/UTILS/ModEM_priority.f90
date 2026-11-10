@@ -3,6 +3,7 @@ module ModEM_priority_queue
     use iso_fortran_env, only: int64, real64
 
     use utilities
+    use ModEM_logger
 
     implicit none
 
@@ -118,7 +119,7 @@ function ModEM_pque_exists(name) result(exists)
 
 end function ModEM_pque_exists
 
-subroutine ModEM_pque_push(que_name, iTx, iPol, weight)
+subroutine ModEM_pque_push(que_name, iTx, iPol, weight, scaled_weight)
 
     implicit none
 
@@ -126,6 +127,7 @@ subroutine ModEM_pque_push(que_name, iTx, iPol, weight)
     integer, intent(in) :: iTx
     integer, intent(in) :: iPol
     real, intent(in) :: weight
+    integer, intent(in), optional :: scaled_weight
 
     type(node), pointer :: entry
     type(node), pointer :: cur
@@ -137,10 +139,14 @@ subroutine ModEM_pque_push(que_name, iTx, iPol, weight)
     entry%iPol = iPol
     entry%weight = weight
 
+    if (present(scaled_weight)) then
+        entry % scaled_weight = scaled_weight
+    else
+        entry % scaled_weight = -1
+    end if
+
     ! First node
     que => ModEM_pque_get(que_name)
-
-
     if (.not. associated(que % heap)) then
         que % heap => entry
         entry % prev => null()
@@ -207,6 +213,110 @@ subroutine ModEM_pque_peek(que_name, iTx, iPol, weight, scaled_weight)
 
 end subroutine ModEM_pque_peek
 
+subroutine ModEM_pque_seek(que_name, desired_weight, iTx, iPol, weight, scaled_weight)
+
+    implicit none
+
+    character (len=*), intent(in) :: que_name
+    integer, intent(in) :: desired_weight
+    integer, intent(out) :: iTx
+    integer, intent(out) :: iPol
+    integer, intent(out), optional :: weight
+    integer, intent(out), optional :: scaled_weight
+
+    type (priority_queue), pointer :: que
+    type (node), pointer :: cur
+
+    que => ModEM_pque_get(que_name)
+    if (.not. associated(que % heap)) then
+        call errStop('Priority queue is empty')
+    end if
+
+    iTx = -1
+    iPol = -1
+
+    if (present(weight)) then
+        weight = -1
+    end if
+
+    if (present(scaled_weight)) then
+        scaled_weight = -1
+    end if
+
+    call ModEM_log('ModEM_pque_seek - desired_weight: $i ', intArgs=(/desired_weight/))
+
+    cur => que % heap
+    do while (associated(cur))
+        if (cur % scaled_weight == desired_weight) then
+            ! We found our desired weight so return it
+            iTx = cur % iTx
+            iPol = cur % iPol
+
+            if (present(weight)) then
+                weight = cur % weight
+            end if
+
+            if (present(scaled_weight)) then
+                scaled_weight = cur % scaled_weight
+            end if
+
+            ! Now remove it from the queue
+            if (.not. associated(cur % prev)) then
+                ! If we are at the front of the que
+                que % heap => cur % next
+
+                if (associated(cur % next)) then
+                    cur % next % prev => null()
+                end if
+            else
+                cur % next % prev => cur % prev
+                cur % next => null()
+                cur % prev => null()
+            end if
+
+            deallocate(cur)
+            cur => null()
+
+            return
+        end if 
+
+        cur => cur % next
+    end do
+
+end subroutine ModEM_pque_seek
+
+function ModEM_pque_search(que_name, desired_weight, weight_avail) result (found)
+
+    implicit none
+
+    character (len=*), intent(in) :: que_name
+    integer, intent(in) :: desired_weight
+    integer, intent(out) :: weight_avail
+    type (priority_queue), pointer :: que
+    type (node), pointer :: cur
+
+    logical :: found
+
+    found = .false.
+
+    que => ModEM_pque_get(que_name)
+    if (.not. associated(que % heap)) then
+        call errStop('Priority queue is empty')
+    end if
+
+    cur => que % heap
+    do while (associated(cur))
+        if (cur % scaled_weight == desired_weight) then
+            found = .true.
+            call ModEM_log("We found: $i ", intArgs=(/cur % scaled_weight/))
+            weight_avail = cur % scaled_weight
+            return
+        end if 
+
+        cur => cur % next
+    end do
+
+end function ModEM_pque_search
 
 subroutine ModEM_pque_pop(que_name, iTx, iPol, weight, scaled_weight)
 
@@ -334,7 +444,6 @@ subroutine ModEM_pque_print(que_name)
         return
     end if
 
-
     write(0,*) 'Printing priority queue: ', trim(que % name)
     cur => que % heap
     do while (associated(cur))
@@ -343,6 +452,34 @@ subroutine ModEM_pque_print(que_name)
     end do
 
 end subroutine ModEM_pque_print
+
+subroutine ModEM_pque_log(que_name, message)
+
+    implicit none
+
+    character (len=*), intent(in) :: message
+    character (len=*), intent(in) :: que_name
+    type(priority_queue), pointer :: que
+    type(node), pointer :: cur
+    character (len=*), parameter :: LOG_MSG_FMT = "(A, I4.4, A, I2.2, A, I5.5, A, I4.4)"
+    character (len=512) :: log_message
+
+    que => ModEM_pque_get(que_name)
+    if (.not. associated(que % heap)) then
+        call ModEM_log("Priority queue '"// trim(que_name)//"' is empty!")
+        return
+    end if
+
+    cur => que % heap
+    call ModEM_log("Printing priority queue: '"//trim(que_name)//"' "//trim(message)//":")
+    do while (associated(cur))
+        write(log_message, LOG_MSG_FMT) " - iTx: ", cur % iTx, ', iPol: ', cur % iPol, &
+            ', weight: ', cur % weight, ' scaled: ', cur % scaled_weight
+        call ModEM_log(log_message)
+        cur => cur % next
+    end do
+
+end subroutine ModEM_pque_log
 
 
 end module ModEM_priority_queue

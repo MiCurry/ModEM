@@ -194,7 +194,7 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
    if (present(flush_log)) then
        flush_lcl = flush_log
    else
-        flush_lcl = .false.
+        flush_lcl = .true.
    end if
 
    call expand_string(msg, messageExpanded, intArgs, logicArgs, realArgs)

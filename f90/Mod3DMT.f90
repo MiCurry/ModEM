@@ -15,6 +15,7 @@ program Mod3DMT
      use LBFGS
      use utilities
      use ModelSpace
+     use ModEM_logger
      !use mtinvsetup
 
 #ifdef MPI
@@ -35,6 +36,8 @@ program Mod3DMT
 
 #ifdef MPI
       call  constructor_MPI
+      call ModEM_log_init(mainOnly=.false.)
+      call ModEM_log("I am $i and my log has been started!", intArgs=(/taskid/))
 #endif
 
 #ifdef MPI
@@ -259,7 +262,6 @@ program Mod3DMT
 
      case (INVERSE)
          call ModEM_timers_start("Total Inverse")
-         call ModEM_profiler_init(size(txdict), 2)
          if (trim(cUserDef%search) == 'NLCG') then
             ! sigma1 contains mHat on input (zero = starting from the prior)
              write(*,*) 'Starting the NLCG search...'
