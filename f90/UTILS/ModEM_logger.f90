@@ -29,7 +29,7 @@ module ModEM_logger
 implicit none
 
     character (len=512), private ::  log_fname
-    integer, private :: log_fid = 0
+    integer, public :: log_fid = 0
     integer :: task_id_lcl
 
 contains
@@ -46,7 +46,7 @@ subroutine ModEM_log_init(mainOnly)
       if (present(mainOnly)) then
         mainOnly_lcl = mainOnly
       else
-        mainOnly_lcl = .true.
+        mainOnly_lcl = .false.
       end if
 
 #ifdef MPI
@@ -182,7 +182,7 @@ subroutine ModEM_log(msg, intArgs, realArgs, logicArgs, fid, mainOnly, flush_log
    if (present(mainOnly)) then
        mainOnly_lcl = mainOnly
    else
-       mainOnly_lcl = .true.
+       mainOnly_lcl = .false.
    end if
 
    if (present(fid)) then

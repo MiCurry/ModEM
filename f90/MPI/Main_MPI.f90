@@ -782,11 +782,6 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
         if (nTasks_avaliable() >= nTasks_required .and. more_to_send) then
             call ModEM_pque_seek(job_name, nTasks_required, iTx, iPol, weight)
 
-            call ModEM_log('- Popped transmitter: iTx: $i iPol: $i weight: $i scaled: $i', &
-                intArgs=(/iTx, iPol, weight, nTasks_required/))
-
-            call ModEM_pque_log(job_name, 'popped a transmitter..')
-
             ! Find tasks_on_job number of jobs that are free
             call find_free_tasks(nTasks_required, tasks_on_job)
 
@@ -796,6 +791,9 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
 
             write(0,*) 'Free tasks: ', tasks_on_job, nTasks_required
 
+            call ModEM_log('- Popped transmitter: iTx: $i iPol: $i weight: $i scaled: $i', &
+                intArgs=(/iTx, iPol, weight, nTasks_required/))
+
             ! If we have more than one task, then we need to have the group of worker tasks
             ! make a new communicator
             if (nTasks_required > 1) then
@@ -804,22 +802,21 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
             end if
 
             call Master_send_message(tasks_on_job(1), trim(job_name), iTx, iPol, trim(label), MPI_COMM_WORLD)
+            call ModEM_log("")
         end if
 
         !
         ! Receiving..
         !
         if (Master_has_new_message()) then ! Someone is sending us a message
-
-            write(0,*) "Reciving message: "
+            call ModEM_log("")
             call Master_recv_message(MPI_ANY_SOURCE, which_per, which_pol, who, job_time_secs, MPI_COMM_WORLD)
-            write(0,*) "Recived message from: ", who, " for ", which_per, which_pol
+
 
             ! Record the time  it took for this period
             call ModEM_profiler_record(job_name, which_per, which_pol, job_time_secs)
             if (trim(job_name) == 'FORWARD' .or. trim(job_name) == 'JmultT'  & 
                 .or. trim(job_name) == 'Jmult') then
-                    write(0,*) "Calling EsMgr_get for transmitter ", which_per, " pol ", which_pol , ' from: ', who
                     call EsMgr_get(eAll_out % solns(which_per), which_per, pol_index=which_pol, from=who)
             end if
 
@@ -836,6 +833,7 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
                     write(0,*) "RECLAMINING WORKER: ",  iWorkers, task_working, current_worker_assignment
                 end if
             end do
+            call ModEM_log("")
         end if
     end do
 
@@ -872,20 +870,15 @@ subroutine find_next_largest_job(que_name, max_weight, nTasksRequired)
     logical :: found
     integer :: cur_weight
 
-    call ModEM_log("find_next_largest_job - start - searching for a task with at least: $i", intArgs=(/max_weight/))
-
     if (max_weight == 0) then
         cur_weight = 1
     else
         cur_weight = max_weight
     end if
 
-    call ModEM_pque_log(que_name, "find_next_largest_job")
-
     do wgt = cur_weight, 1, -1
         found = ModEM_pque_search(que_name, wgt, nTasksRequired)
         if (found) then
-            call ModEM_log('find_next_largest_job - found: wgt: $i nTasksRequired: $i', intArgs=(/wgt, nTasksRequired/))
             return
         end if
     end do
@@ -2472,8 +2465,6 @@ subroutine Master_job_assign_group(tasks_on_job, group_id)
     integer, allocatable, dimension(:) :: tasks_list
     integer :: iWorkers
 
-    write(0,*) "Assigning a group ", group_id, " to: ", tasks_on_job
-    call ModEM_log('Master_job_assign_group - start')
 
     ! With the workers I need to communicate what iTx they will work on,
     ! and if they will be the main task or a worker task
@@ -2581,6 +2572,8 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
      integer :: des_index, iTx
      double precision :: now
      
+
+     call ModEM_log('worker_forward - started per_index: $i pol_index: $i', intArgs=(/per_index, pol_index/))
      call ModEM_timers_create('worker_forward', start_now=.true.)
      call ModEM_timers_start('worker_forward')
 
@@ -2606,14 +2599,18 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
      
      ! Solve forward problem
      if ((para_method.eq.0).or.(size_local.eq.1)) then
+         call ModEM_log("I am calling fwdSolve with para_method: $i rank_local: $i rank_global: $i", intArgs=(/para_method, rank_local, taskid/))
          call fwdSolve(per_index,e0,b0,device_id)
+        call ModEM_log("DONE forward problem... local rank: $i", intArgs=(/rank_local/))
      else
 #ifdef PETSC
          call fwdSolve(per_index,e0,b0,device_id,comm_local)
 #elif defined(FG)
 #endif
         write(0,*) taskid, ' - Solving forward problem... local rank:', rank_local
+        call ModEM_log("Calling fwdSolve with para_method: $i rank_local: $i rank_global: $i", intArgs=(/para_method, rank_local, taskid/))
         call fwdSolve(per_index,e0,b0,device_id,comm_local)
+        call ModEM_log("DONE forward problem... local rank: $i", intArgs=(/rank_local/))
         write(0,*) taskid, ' - DONE forward problem... local rank:', rank_local
      !    if (rank_local.eq.0) then
      !        call fwdSolve(per_index,e0,b0,device_id)
@@ -2636,7 +2633,8 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
          worker_job_task%taskid=rank_current
          worker_job_task%job_time_secs = timer % total_secs
          call Pack_worker_job_task
-         write(0,*) taskid, ' - Sending worker job task back to master...'
+         call ModEM_log("Sending worker job task back to master... rank_local: $i", intArgs=(/rank_local/))
+         write(0,*) taskid, ' - Sending worker job task back to master... per: ', per_index, ' pol: ', pol_index
          call MPI_SEND(worker_job_package,Nbytes, MPI_PACKED,0, &
     &                FROM_WORKER, MPI_COMM_WORLD, ierr)
          
@@ -2651,8 +2649,6 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
      now = MPI_Wtime()
      time_passed = now - previous_time
      previous_time = now
-
-
 
 end subroutine worker_forward
 
@@ -3462,6 +3458,8 @@ Subroutine Worker_job(sigma,d)
      ! TODO: test shared memory model - it is probably better to just declare
      ! everything private (like in the OMP paradigm) and only share the 
      ! grid, sigma, etc. 
+
+    use iso_fortran_env, only: int32
      implicit none
 
      type(modelParam_t),intent(inout)       :: sigma
@@ -3510,6 +3508,9 @@ Subroutine Worker_job(sigma,d)
      previous_message=''
      write(node_info,'(a5,i3.3,a4)') 'node[',taskid,']:  '
 
+     call ModEM_log("Worker_job - started")
+     call ModEM_timers_create('worker_job_waiting')
+
      in_a_group = .false.
 
      do  ! the major loop
@@ -3544,16 +3545,24 @@ Subroutine Worker_job(sigma,d)
                  write(6,'(a12,a35)') node_info, ' Waiting for a message from Someone'
              end if
          end if
+
+         call ModEM_log("Waiting for a message from someone...")
          ! reset the timer
          previous_time = now
          now = MPI_Wtime()
          ! receive the job info from someone
+         call ModEM_timers_start('worker_job_waiting')
          call MPI_RECV(worker_job_package, Nbytes, MPI_PACKED ,0, FROM_MASTER,comm_current,STATUS, ierr)
+         call ModEM_timers_stop('worker_job_waiting', accumulate=.true.)
+         call ModEM_timers_print('worker_job_waiting', log_fid)
+         call ModEM_log("Time spent waiting: $i", intArgs=(/int(ModEM_timers_get_time_secs('worker_job_waiting'), kind=int32)/))
 
          call Unpack_worker_job_task
          write(6,'(a12,a12,a30,a16,i5)') node_info,' MPI TASK [',         &
                 trim(worker_job_task%what_to_do),'] received from ',        &
                 STATUS(MPI_SOURCE)
+
+         call ModEM_log("Received worker job task: " // trim(worker_job_task%what_to_do))
 
          select case (trim(worker_job_task%what_to_do))
             case ('FORWARD')

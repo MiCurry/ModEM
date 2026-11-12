@@ -1187,7 +1187,7 @@ subroutine BiCGfg(b,x,KSPiter,comm_local,adjt)
       ! wait for the others
       call MPI_BARRIER(comm_local, ierr)
       KSPiter%rerr(iter) = real(rnorm / bnorm)
-       write(0,*) 'iteration # ', iter ,' relres= ', KSPiter%rerr(iter)
+       !write(0,*) 'iteration # ', iter ,' relres= ', KSPiter%rerr(iter)
       if (rnorm.lt.btol) then
           KSPiter%failed = .false.
           KSPiter%niter = iter

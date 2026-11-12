@@ -243,12 +243,36 @@ subroutine ModEM_pque_seek(que_name, desired_weight, iTx, iPol, weight, scaled_w
         scaled_weight = -1
     end if
 
-    call ModEM_log('ModEM_pque_seek - desired_weight: $i ', intArgs=(/desired_weight/))
-
     cur => que % heap
+
+    if (cur % scaled_weight == desired_weight) then
+
+        iTx = cur % iTx
+        iPol = cur % iPol
+
+        if (present(weight)) then
+            weight = cur % weight
+        end if
+
+        if (present(scaled_weight)) then
+            scaled_weight = cur % scaled_weight
+        end if
+
+        write(0,*) 'Here 0'
+        que % heap => cur % next
+        if (associated(cur % next)) then
+            cur % next % prev => null()
+        end if
+        cur % next => null()
+        cur % prev => null()
+        deallocate(cur)
+        cur => null()
+        return
+    end if
+
+
     do while (associated(cur))
         if (cur % scaled_weight == desired_weight) then
-            ! We found our desired weight so return it
             iTx = cur % iTx
             iPol = cur % iPol
 
@@ -260,23 +284,17 @@ subroutine ModEM_pque_seek(que_name, desired_weight, iTx, iPol, weight, scaled_w
                 scaled_weight = cur % scaled_weight
             end if
 
-            ! Now remove it from the queue
-            if (.not. associated(cur % prev)) then
-                ! If we are at the front of the que
-                que % heap => cur % next
+            write(0,*) 'Here 1'
 
-                if (associated(cur % next)) then
-                    cur % next % prev => null()
-                end if
-            else
+            cur % prev % next => cur % next
+            if (associated(cur % next)) then
                 cur % next % prev => cur % prev
-                cur % next => null()
-                cur % prev => null()
             end if
 
+            cur % next => null()
+            cur % prev => null()
             deallocate(cur)
             cur => null()
-
             return
         end if 
 
@@ -308,7 +326,6 @@ function ModEM_pque_search(que_name, desired_weight, weight_avail) result (found
     do while (associated(cur))
         if (cur % scaled_weight == desired_weight) then
             found = .true.
-            call ModEM_log("We found: $i ", intArgs=(/cur % scaled_weight/))
             weight_avail = cur % scaled_weight
             return
         end if 
@@ -376,6 +393,7 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
     integer :: ideal_ranks
     integer :: actual_ranks
     real (kind=real64):: max_weight, fraction
+    logical :: make_all_one
 
     type (priority_queue), pointer :: que
 
@@ -408,9 +426,9 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
         if (fraction == 1.0) then
             cur % scaled_weight = min(total_mpi_tasks, 3)
         else if (fraction >= 0.85) then
-            cur % scaled_weight = min(total_mpi_tasks, 2)
+            cur % scaled_weight = min(total_mpi_tasks, 1)
         else if (fraction >= 0.75) then
-            cur % scaled_weight = min(total_mpi_tasks, 2)
+            cur % scaled_weight = min(total_mpi_tasks, 1)
         else if (fraction >= 0.5) then
             cur % scaled_weight = min(total_mpi_tasks, 1)
         else if (fraction >= 0.25) then
@@ -426,6 +444,28 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
 
         cur => cur % next
     end do
+
+    ! Now see if all of them are assigned the total_mpi_tasks and if they are make them all one:
+
+    cur => que % heap
+    do while (associated(cur))
+        if (cur % scaled_weight == total_mpi_tasks) then
+            make_all_one = .true.
+        else
+            make_all_one = .false.
+            exit
+        end if
+        cur => cur % next
+    end do
+
+    if (make_all_one) then
+        write(0,*) "Seeing all tasks equal to one:"
+        cur => que % heap
+        do while (associated(cur))
+            cur % scaled_weight = 1
+            cur => cur % next
+        end do
+    end if
 
 
 end subroutine ModEM_pque_rescale_weights
