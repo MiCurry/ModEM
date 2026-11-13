@@ -381,12 +381,20 @@ function ModEM_pque_is_empty(que_name) result(is_empty)
 
 end function ModEM_pque_is_empty
 
-subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
+subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks, prev_tasks)
 
     implicit none
 
     character (len=*), intent(in) :: que_name
     integer, intent(in) :: total_mpi_tasks
+    ! Number of tasks each (iTx, iPol) ran with last time, used for hysteresis
+    integer, dimension(:,:), intent(in), optional :: prev_tasks
+
+    ! Hysteresis: a transmitter needs PROMOTE to gain extra tasks, but keeps
+    ! them until it drops below DEMOTE
+    real (kind=real64), parameter :: PROMOTE = 0.95_real64
+    real (kind=real64), parameter :: DEMOTE  = 0.85_real64
+    logical :: had_extra
 
     type(node), pointer :: cur
     integer :: tasks_remaining
@@ -396,7 +404,6 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
     logical :: make_all_one
 
     type (priority_queue), pointer :: que
-
 
     que => ModEM_pque_get(que_name)
     if (.not. associated(que % heap)) then
@@ -422,22 +429,15 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
     do while (associated(cur))
         fraction = cur % weight / max_weight
 
-        if (fraction == 1.0) then
-            cur % scaled_weight = min(total_mpi_tasks, 2)
-        else if (fraction >= 0.95) then
-            cur % scaled_weight = min(total_mpi_tasks, 2)
-        else if (fraction >= 0.85) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else if (fraction >= 0.75) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else if (fraction >= 0.5) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else if (fraction >= 0.25) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
-        else if (fraction >= 0.25) then
-            cur % scaled_weight = min(total_mpi_tasks, 1)
+        had_extra = .false.
+        if (present(prev_tasks)) then
+            had_extra = prev_tasks(cur % iTx, cur % iPol) > 1
+        end if
+
+        if (fraction >= PROMOTE .or. (had_extra .and. fraction >= DEMOTE)) then
+            cur % scaled_weight = min(1, 1)
         else
-            cur % scaled_weight = min(total_mpi_tasks, 1)
+            cur % scaled_weight = min(1, 1)
         end if
 
         write(0,*) 'cur % iTx=', cur % iTx, ' iPol=', cur % iPol, ' weight=', cur % weight, &
@@ -463,7 +463,7 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
         write(0,*) "Seeing all tasks equal to one:"
         cur => que % heap
         do while (associated(cur))
-            cur % scaled_weight = 2
+            cur % scaled_weight = 1
             cur => cur % next
         end do
     end if

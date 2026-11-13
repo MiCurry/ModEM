@@ -946,9 +946,7 @@ end subroutine unpack_BC_from_file
 #ifdef MPI
         else
             if (present(comm_local)) then
-#ifdef FG
                call FWDSolve3D(comb%b(e%Pol_index(iMode)), omega, e%pol(imode), device_id, comm_local)
-#endif
             else
                call FWDSolve3D(comb%b(e%Pol_index(iMode)),omega, e%pol(imode), device_id)
             end if

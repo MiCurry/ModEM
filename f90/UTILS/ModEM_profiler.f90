@@ -12,7 +12,7 @@ module ModEM_profiler
         integer :: iPol
         integer :: count = 0
 
-        integer (kind=int64) :: total_time = 0
+        real (kind=real64) :: total_cost = 0.0
         real :: average = 0.0
         real :: avg_weighted = 0.0
 
@@ -26,6 +26,8 @@ module ModEM_profiler
         integer (kind=int64) :: secs
         integer (kind=int64) :: nsecs
         real (kind=real64) :: total_time_s
+        ! Single-task-equivalent cost: total_time_s * nTasks
+        real (kind=real64) :: cost_s
         real (kind=real64) :: weight = 1.0
         type(tx_record), pointer :: next => null()
     end type tx_record
@@ -117,7 +119,7 @@ subroutine ModEM_profiler_write_csv_header(fname)
 
     open(newunit=fid, file=trim(fname), action='write', status='unknown')
 
-    write(fid,*) 'Iteration,iTx,iPol,nTasks,Weight,Total Time (s), Wgted Avg, Total Avg'
+    write(fid,*) 'Iteration,iTx,iPol,nTasks,Weight,Total Time (s),Cost (s), Wgted Avg, Total Avg'
     close(fid)
 
 
@@ -141,7 +143,7 @@ subroutine ModEM_profiler_write_csv_line(profile_name, fname, iTx, iPol)
 
     profile => ModEM_profiler_get(profile_name)
     cur => profile % tx_profiles(iTx, iPol) % record
-    write(fid,*) cur % itr, ',', iTx, ',', iPol, ',', cur % nTasks, ',', cur % weight, ',', cur % total_time_s, ',', &
+    write(fid,*) cur % itr, ',', iTx, ',', iPol, ',', cur % nTasks, ',', cur % weight, ',', cur % total_time_s, ',', cur % cost_s, ',', &
         profile % tx_profiles(iTx, iPol) % avg_weighted, ',', profile % tx_profiles(iTx, iPol) % average
     close(fid)
 
@@ -249,11 +251,14 @@ subroutine ModEM_profiler_record(profile_name, iTx, iPol, secs, nsecs, weight, i
 
     profile => ModEM_profiler_get(profile_name)
     allocate(new_record)
-    total_time_secs = real(secs, kind=real64) + (real(nsecs, kind=real64) / 1e+10_real64)
+    total_time_secs = real(secs, kind=real64) + (real(nsecs, kind=real64) / 1e+9_real64)
     new_record % secs = secs
     new_record % nsecs = nsecs
     new_record % total_time_s = total_time_secs
-    new_record % weight = weight
+    ! Normalize by the number of tasks so a transmitter that ran on several
+    ! tasks does not appear cheaper than it is
+    new_record % cost_s = total_time_secs * real(max(nTasks_lcl, 1), kind=real64)
+    new_record % weight = weight_lcl
     new_record % itr = itr_lcl
     new_record % nTasks = nTasks_lcl
     new_record % next => null()
@@ -265,11 +270,11 @@ subroutine ModEM_profiler_record(profile_name, iTx, iPol, secs, nsecs, weight, i
         profile % tx_profiles(iTx, iPol)%record => new_record
     end if
 
-    profile % tx_profiles(iTx, iPol)%total_time = profile % tx_profiles(iTx, iPol) % total_time + secs
+    profile % tx_profiles(iTx, iPol)%total_cost = profile % tx_profiles(iTx, iPol) % total_cost + new_record % cost_s
     profile % tx_profiles(iTx, iPol)%count = profile % tx_profiles(iTx, iPol) % count + 1
 
     ! Recalculate total average
-    profile % tx_profiles(iTx, iPol)%average = real(profile % tx_profiles(iTx, iPol)%total_time, kind=real64) &
+    profile % tx_profiles(iTx, iPol)%average = profile % tx_profiles(iTx, iPol)%total_cost &
                         / real(profile % tx_profiles(iTx, iPol)%count, kind=real64)
 
 end subroutine ModEM_profiler_record
@@ -283,7 +288,6 @@ subroutine ModEM_profiler_compute_wgt_avgs(profile_name)
     type (profile_t), pointer :: profile
     type (tx_record), pointer :: cur
     integer :: iTx, iPol
-    integer :: iRecords
 
     real (kind=real64) :: total_time_wgt
     real (kind=real64) :: total_wgt
@@ -297,13 +301,15 @@ subroutine ModEM_profiler_compute_wgt_avgs(profile_name)
             total_time_wgt = 0.0
             total_wgt = 0.0
             wgt_avg = 0.0
-            do iRecords = 1, profile % tx_profiles(iTx, iPol) % count
-                total_time_wgt = total_time_wgt + (real(cur % total_time_s, kind=real64) * cur % weight)
+            do while (associated(cur))
+                total_time_wgt = total_time_wgt + (cur % cost_s * cur % weight)
                 total_wgt = total_wgt + cur % weight
-                write(0,*) 'cur % secs: ', cur % secs, ' cur % weight: ', cur % weight
+                cur => cur % next
             end do
 
-            wgt_avg = total_time_wgt / total_wgt
+            if (total_wgt > 0.0) then
+                wgt_avg = total_time_wgt / total_wgt
+            end if
 
             profile % tx_profiles(iTx, iPol) % avg_weighted = wgt_avg
             write(0,*) 'Total weighted avg for: iTx: ', itx, ' iPol: ', ipol, 'wgt_avg: ', wgt_avg
@@ -321,7 +327,7 @@ function ModEM_profiler_get_average(profile_name, iTx, ipol) result(average_secs
     integer, intent(in) :: iTx
     integer, intent(in) :: ipol
 
-    real (kind=int64) :: average_secs
+    real (kind=real64) :: average_secs
 
     type (profile_t), pointer :: profile
 
