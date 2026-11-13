@@ -126,6 +126,7 @@ type :: define_worker_job
      Integer       :: per_index,Stn_index,pol_index,data_type_index,data_type
      Integer       :: taskid
      Integer (kind=int64) :: job_time_secs 
+     Integer (kind=int64) :: job_time_nsecs
      logical       :: keep_E_soln=.false.
      logical       :: several_Tx=.false.
      logical       :: create_your_own_e0=.false.
@@ -160,7 +161,7 @@ subroutine create_worker_job_task_place_holder
     CALL MPI_PACK_SIZE(80, MPI_CHARACTER, MPI_COMM_WORLD, Nbytes1,  ierr)
     CALL MPI_PACK_SIZE(80, MPI_CHARACTER, MPI_COMM_WORLD, Nbytes2,  ierr)
     CALL MPI_PACK_SIZE(7, MPI_INTEGER, MPI_COMM_WORLD, Nbytes3,  ierr)
-    CALL MPI_PACK_SIZE(1, MPI_INTEGER8, MPI_COMM_WORLD, Nbytes4,  ierr)
+    CALL MPI_PACK_SIZE(2, MPI_INTEGER8, MPI_COMM_WORLD, Nbytes4,  ierr)
     CALL MPI_PACK_SIZE(3, MPI_LOGICAL, MPI_COMM_WORLD, Nbytes5,  ierr)
 
     Nbytes=(Nbytes1+Nbytes2+Nbytes3+NBytes4+Nbytes5)+1
@@ -187,6 +188,7 @@ index=1
         call MPI_Pack(worker_job_task%data_type ,1 , 		MPI_INTEGER  , worker_job_package, Nbytes, index, MPI_COMM_WORLD, ierr)
         call MPI_Pack(worker_job_task%taskid ,1 , 			MPI_INTEGER  , worker_job_package, Nbytes, index, MPI_COMM_WORLD, ierr)
         call MPI_Pack(worker_job_task%job_time_secs ,1 ,  MPI_INTEGER8  , worker_job_package, Nbytes, index, MPI_COMM_WORLD, ierr)
+        call MPI_Pack(worker_job_task%job_time_nsecs ,1 ,  MPI_INTEGER8  , worker_job_package, Nbytes, index, MPI_COMM_WORLD, ierr)
 
         call MPI_Pack(worker_job_task%keep_E_soln,1, 		MPI_LOGICAL, worker_job_package, Nbytes, index, MPI_COMM_WORLD, ierr)
         call MPI_Pack(worker_job_task%several_Tx,1, 		MPI_LOGICAL, worker_job_package, Nbytes, index, MPI_COMM_WORLD, ierr)
@@ -211,6 +213,7 @@ index=1
         call MPI_Unpack(worker_job_package, Nbytes, index, worker_job_task%data_type ,1 , MPI_INTEGER,MPI_COMM_WORLD, ierr)
         call MPI_Unpack(worker_job_package, Nbytes, index, worker_job_task%taskid ,1 , MPI_INTEGER,MPI_COMM_WORLD, ierr)
         call MPI_Unpack(worker_job_package, Nbytes, index, worker_job_task%job_time_secs, 1, MPI_INTEGER8, MPI_COMM_WORLD, ierr)
+        call MPI_Unpack(worker_job_package, Nbytes, index, worker_job_task%job_time_nsecs, 1, MPI_INTEGER8, MPI_COMM_WORLD, ierr)
         
         call MPI_Unpack(worker_job_package, Nbytes, index, worker_job_task%keep_E_soln,1, MPI_LOGICAL,MPI_COMM_WORLD, ierr)
         call MPI_Unpack(worker_job_package, Nbytes, index, worker_job_task%several_Tx,1, MPI_LOGICAL,MPI_COMM_WORLD, ierr)

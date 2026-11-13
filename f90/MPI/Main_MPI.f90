@@ -34,6 +34,8 @@ module Main_MPI
   type(grid_t), target, save, private  :: grid
   logical, dimension(:), allocatable   :: task_working
   integer, dimension(:,:), allocatable :: current_worker_assignment
+  integer :: itr
+  real :: weight_for_profile
 
   private Master_job_DataResp_main_only
   private Master_job_DataResp_IO
@@ -102,6 +104,10 @@ Subroutine Constructor_MPI
 
       allocate(current_worker_assignment(number_of_workers, 2))
       current_worker_assignment(:,:) = -1
+      weight_for_profile = 1.0
+      itr = 1
+
+      call ModEM_profiler_write_csv_header('fwd.out.csv')
 
 End Subroutine Constructor_MPI
 !----------------------------------------------------------------------------
@@ -696,7 +702,47 @@ Subroutine Master_job_fwdPred(sigma,d1,eAll,comm,label)
      write(ioMPI,*)'FWD: TIME REQUIERED: ',time_used ,'s'
      call deall (e0)
 
+     itr = itr + 1
+
+     write(0,*) "ITERATION: ", itr
+
+
 end subroutine Master_job_fwdPred
+
+function new_weight(itr_in, decay_rate, n_steps) result(weight)
+
+    implicit none
+
+    integer, intent(in) :: itr_in
+    real, intent(in), optional :: decay_rate
+    integer, intent(in), optional :: n_steps 
+    integer :: t
+    real :: weight
+
+    real :: decay_rate_lcl
+    integer :: n_steps_lcl
+
+    if (present(n_steps)) then
+        n_steps_lcl = n_steps
+    else
+        n_steps_lcl = 5
+    end if
+
+    if (present(decay_rate)) then
+        decay_rate_lcl = decay_rate
+    else
+        decay_rate_lcl = .9
+    end if
+
+    if (itr_in <= 1) then
+        write(0,*) "SETITNG WEIGHT TO 1.0!"
+        weight = .9
+    else
+        weight = exp(-decay_rate_lcl * real(itr_in - 1.0, kind=real64))
+    end if
+    write(0,*) "SETTING weight: ", weight, ' iter_in: ', itr_in, ' decay_weight:', decay_rate_lcl
+
+end function new_weight
 
 subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, label)
 
@@ -722,16 +768,26 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
     logical :: flag, more_to_send, start_reciving
     integer :: nWorkers
     integer :: nTasks_required
-    integer (int64) :: job_time_secs
+    integer (int64) :: job_time_secs, job_time_nsecs
     integer :: tasks_free
     integer :: iWorker
     logical :: found
 
+    integer, dimension(nTx,2) :: nTasks_per_tx 
+
+
     call ModEM_log('Master_job_smart_distribute - start')
+
+    if (itr > 4) then
+        weight_for_profile = new_weight(itr) 
+    end if
+
+    write(0,*) "New weight_for_profile: ", weight_for_profile
 
     sending = .true.
     task_is_working(:) = .false.
     current_worker_assignment(:,:) = -1
+    nTasks_per_tx(:,:) = 0
 
     ! See if we have a profiler and a priroity que for this job name
     if (.not. ModEM_profiler_exists(trim(job_name))) then
@@ -743,10 +799,12 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
     end if
 
     ! If the priority queue is empty, then initialize it with all transmitters and their weights
-    if (ModEM_pque_is_empty(job_name)) then
+
+    if (ModEM_pque_is_empty(job_name) .or. itr < 30) then
+        write(0,*) "Setting everything equal to 1"
         do iTx = 1, nTx
             do iPol = 1, 2
-                call ModEM_pque_push(job_name, iTx, iPol, 1.0, 1)
+                call ModEM_pque_push(job_name, iTx, iPol, 1.0_real64, 2)
             end do
         end do
     end if
@@ -789,6 +847,8 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
                 call assign_workers_to_job(tasks_on_job(iWorker), iTx, iPol)
             end do
 
+            nTasks_per_tx(iTx, iPol)  = nTasks_required
+
             write(0,*) 'Free tasks: ', tasks_on_job, nTasks_required
 
             call ModEM_log('- Popped transmitter: iTx: $i iPol: $i weight: $i scaled: $i', &
@@ -810,11 +870,11 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
         !
         if (Master_has_new_message()) then ! Someone is sending us a message
             call ModEM_log("")
-            call Master_recv_message(MPI_ANY_SOURCE, which_per, which_pol, who, job_time_secs, MPI_COMM_WORLD)
+            call Master_recv_message(MPI_ANY_SOURCE, which_per, which_pol, who, job_time_secs, job_time_nsecs, MPI_COMM_WORLD)
 
+            call ModEM_profiler_record(job_name, which_per, which_pol, job_time_secs, job_time_nsecs, &
+                weight=real(weight_for_profile, kind=real64), itr=itr, nTasks=nTasks_per_tx(which_per, which_pol))
 
-            ! Record the time  it took for this period
-            call ModEM_profiler_record(job_name, which_per, which_pol, job_time_secs)
             if (trim(job_name) == 'FORWARD' .or. trim(job_name) == 'JmultT'  & 
                 .or. trim(job_name) == 'Jmult') then
                     call EsMgr_get(eAll_out % solns(which_per), which_per, pol_index=which_pol, from=who)
@@ -842,18 +902,32 @@ subroutine Master_job_smart_distribute(job_name, nTx, sigma, eAll_out, comm, lab
         call errStop("There are still tasks in the queue for job: "//trim(job_name))
     end if
 
+    call ModEM_profiler_compute_wgt_avgs(job_name)
+    ! calculate the new weight:
+
     ! Now we have profile everything, we need 
     do iTx = 1, nTx
         do iPol = 1, 2 ! TODO: Change to npol
             ! Profile each transmitter
-            call ModEM_pque_push(job_name, iTx, iPol, real(ModEM_profiler_get_average(job_name, iTx, iPol), kind=real32))
+            if (itr < 30) then
+                call ModEM_pque_push(job_name, iTx, iPol, real(1, kind=real64), scaled_weight=1)
+            else
+                call ModEM_pque_push(job_name, iTx, iPol, real(ModEM_profiler_get_average(job_name, iTx, iPol), kind=real64))
+            end if
         end do
     end do  
-
 
     call ModEM_pque_rescale_weights(job_name, 3)
     call ModEM_pque_log(job_name, 'Master_job_smart_distribute - end - scaled ')
     call ModEM_log('Master_job_smart_distribute - end')
+
+    write(0,*) "Printing the report of profiles: iter: ", itr
+    do iTx = 1, nTx
+        do iPol = 1, 2
+            call ModEM_profiler_print(job_name, iTx, iPol)
+            call ModEM_profiler_write_csv_line(job_name, 'fwd.out.csv', iTx, iPol)
+        end do
+    end do
 
 end subroutine Master_job_smart_distribute
 
@@ -1034,7 +1108,7 @@ subroutine Master_send_message(to, what_to_do, per_index, pol_index, label, comm
 
 end subroutine Master_send_message
 
-subroutine Master_recv_message(from, per_index, pol_index, task_id, job_time_secs, comm)
+subroutine Master_recv_message(from, per_index, pol_index, task_id, job_time_secs, job_time_nsecs, comm)
 
     implicit none
 
@@ -1043,6 +1117,7 @@ subroutine Master_recv_message(from, per_index, pol_index, task_id, job_time_sec
     integer, intent(out) :: pol_index
     integer, intent(out) :: task_id
     integer (kind=int64), intent(out) :: job_time_secs
+    integer (kind=int64), intent(out) :: job_time_nsecs
     integer, intent(in) :: comm
 
     call create_worker_job_task_place_holder
@@ -1053,6 +1128,7 @@ subroutine Master_recv_message(from, per_index, pol_index, task_id, job_time_sec
     pol_index = worker_job_task % pol_index
     task_id = worker_job_task % taskid
     job_time_secs = worker_job_task % job_time_secs
+    job_time_nsecs = worker_job_task % job_time_nsecs
 
     write(0,*) 'Master Recieved a message: ', per_index, pol_index, task_id, job_time_secs
     call ModEM_log('Received a message from: $i for per: $i pol: $i', intArgs=(/task_id, per_index, pol_index/))
@@ -2632,6 +2708,7 @@ subroutine worker_forward(sigma, d, per_index, pol_index, &
          call create_worker_job_task_place_holder
          worker_job_task%taskid=rank_current
          worker_job_task%job_time_secs = timer % total_secs
+         worker_job_task%job_time_nsecs = timer % total_nsecs
          call Pack_worker_job_task
          call ModEM_log("Sending worker job task back to master... rank_local: $i", intArgs=(/rank_local/))
          write(0,*) taskid, ' - Sending worker job task back to master... per: ', per_index, ' pol: ', pol_index

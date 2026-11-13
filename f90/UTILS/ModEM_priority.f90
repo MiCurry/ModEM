@@ -17,7 +17,7 @@ module ModEM_priority_queue
     type node
         integer ::  iTx   
         integer ::  iPol 
-        integer :: weight
+        real (real64) :: weight
         integer :: scaled_weight
 
         type(node), pointer :: prev => null()
@@ -126,7 +126,7 @@ subroutine ModEM_pque_push(que_name, iTx, iPol, weight, scaled_weight)
     character (len=*), intent(in) :: que_name
     integer, intent(in) :: iTx
     integer, intent(in) :: iPol
-    real, intent(in) :: weight
+    real(real64), intent(in) :: weight
     integer, intent(in), optional :: scaled_weight
 
     type(node), pointer :: entry
@@ -420,11 +420,12 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
 
     cur => que % heap
     do while (associated(cur))
-
         fraction = cur % weight / max_weight
 
         if (fraction == 1.0) then
-            cur % scaled_weight = min(total_mpi_tasks, 3)
+            cur % scaled_weight = min(total_mpi_tasks, 2)
+        else if (fraction >= 0.95) then
+            cur % scaled_weight = min(total_mpi_tasks, 2)
         else if (fraction >= 0.85) then
             cur % scaled_weight = min(total_mpi_tasks, 1)
         else if (fraction >= 0.75) then
@@ -449,7 +450,7 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
 
     cur => que % heap
     do while (associated(cur))
-        if (cur % scaled_weight == total_mpi_tasks) then
+        if (cur % scaled_weight == 2) then
             make_all_one = .true.
         else
             make_all_one = .false.
@@ -462,7 +463,7 @@ subroutine ModEM_pque_rescale_weights(que_name, total_mpi_tasks)
         write(0,*) "Seeing all tasks equal to one:"
         cur => que % heap
         do while (associated(cur))
-            cur % scaled_weight = 1
+            cur % scaled_weight = 2
             cur => cur % next
         end do
     end if
@@ -501,7 +502,7 @@ subroutine ModEM_pque_log(que_name, message)
     character (len=*), intent(in) :: que_name
     type(priority_queue), pointer :: que
     type(node), pointer :: cur
-    character (len=*), parameter :: LOG_MSG_FMT = "(A, I4.4, A, I2.2, A, I5.5, A, I4.4)"
+    character (len=*), parameter :: LOG_MSG_FMT = "(A, I4.4, A, I2.2, A, F0.4, A, I4.4)"
     character (len=512) :: log_message
 
     que => ModEM_pque_get(que_name)
